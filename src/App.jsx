@@ -10,7 +10,13 @@ import {
 
 // --- CONFIGURATION ---
 const getFirebaseConfig = () => {
-  if (typeof __firebase_config !== 'undefined') return JSON.parse(__firebase_config);
+  // 1. Preview Environment Check
+  if (typeof __firebase_config !== 'undefined') {
+    return JSON.parse(__firebase_config);
+  }
+
+  // 2. Railway / Production Check
+  // We MUST access these explicitly for Vite to replace them at build time.
   return {
     apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
     authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -25,6 +31,7 @@ const app = initializeApp(getFirebaseConfig());
 const auth = getAuth(app);
 const db = getFirestore(app);
 
+// --- CONSTANTS ---
 const COLLECTION_NAME = 'doboard_tasks';
 const COLUMNS = [
   { id: 'todo', label: 'To Do', color: 'bg-gray-100 text-gray-600' },
@@ -43,6 +50,7 @@ const Button = ({ children, onClick, variant = 'primary', className = '', ...pro
   return <button onClick={onClick} className={`${baseStyle} ${variants[variant]} ${className}`} {...props}>{children}</button>;
 };
 
+// --- EMPTY STATE ---
 const EmptyState = ({ onCreate }) => (
   <div className="flex flex-col items-center justify-center h-full w-full animate-in fade-in duration-700 p-8">
     <div className="w-64 h-64 mb-6 relative opacity-90 grayscale-[20%]">
@@ -68,34 +76,38 @@ const EmptyState = ({ onCreate }) => (
   </div>
 );
 
+// --- MAIN APP ---
 export default function App() {
   const [user, setUser] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
-  
-  // NEW: Error State to show you what is wrong
   const [errorMsg, setErrorMsg] = useState(null);
 
   useEffect(() => {
-    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-         import('firebase/auth').then(({ signInWithCustomToken }) => {
-            signInWithCustomToken(auth, __initial_auth_token);
-         });
-    } else {
-        // We catch the error here to show it to you
-        signInAnonymously(auth).catch((error) => {
+    // Auth Logic
+    const initAuth = async () => {
+        try {
+            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                const { signInWithCustomToken } = await import('firebase/auth');
+                await signInWithCustomToken(auth, __initial_auth_token);
+            } else {
+                await signInAnonymously(auth);
+            }
+        } catch (error) {
             console.error(error);
             setErrorMsg("Auth Error: " + error.message);
-        });
-    }
+        }
+    };
+    initAuth();
     return onAuthStateChanged(auth, setUser);
   }, []);
 
   useEffect(() => {
     if (!user) return;
     
+    // Determine path based on environment
     const collectionRef = typeof __app_id !== 'undefined' 
         ? collection(db, 'artifacts', __app_id, 'public', 'data', COLLECTION_NAME)
         : collection(db, COLLECTION_NAME);
@@ -109,14 +121,13 @@ export default function App() {
       setLoading(false);
     }, (error) => {
       console.error(error);
-      // We catch the database error here
       setErrorMsg("Database Error: " + error.message);
       setLoading(false);
     });
     return () => unsubscribe();
   }, [user]);
 
-  // Actions
+  // CRUD Operations
   const handleSaveTask = async (taskData) => {
     if (!user) return;
     try {
@@ -139,9 +150,7 @@ export default function App() {
         await addDoc(collectionRef, { ...taskData, status: 'todo', createdAt: serverTimestamp(), createdBy: user.uid });
       }
       setIsModalOpen(false);
-    } catch (error) { 
-        alert("Error saving: " + error.message);
-    }
+    } catch (error) { alert("Error saving: " + error.message); }
   };
 
   const handleDeleteTask = async (taskId) => {
@@ -174,7 +183,7 @@ export default function App() {
 
   const openNewTask = () => { setEditingTask(null); setIsModalOpen(true); };
 
-  // --- ERROR SCREEN ---
+  // --- ERROR DISPLAY ---
   if (errorMsg) {
     return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-red-50 p-6 text-center">
@@ -230,7 +239,7 @@ export default function App() {
                     </div>
                   ))}
                   {tasks.filter(t => t.status === col.id).length === 0 && (
-                    <div className="h-24 border-2 border-dashed border-gray-100 rounded-lg flex items-center justify-center text-gray-300 text-sm opacity-50 hover:opacity-100 transition-opacity">Drop here</div>
+                     <div className="h-24 border-2 border-dashed border-gray-100 rounded-lg flex items-center justify-center text-gray-300 text-sm opacity-50 hover:opacity-100 transition-opacity">Drop here</div>
                   )}
                 </div>
               </div>
