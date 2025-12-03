@@ -1,12 +1,38 @@
 import React, { useState, useEffect } from 'react';
-import { collection, addDoc, updateDoc, doc, deleteDoc, onSnapshot, query, serverTimestamp } from 'firebase/firestore';
-import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { Plus, Calendar, User, AlignLeft, X, Clock, CheckCircle2, Loader2 } from 'lucide-react';
-import { db, auth } from './firebase';
+import { initializeApp } from 'firebase/app';
+import { 
+  getFirestore, collection, addDoc, updateDoc, doc, deleteDoc, onSnapshot, query, serverTimestamp 
+} from 'firebase/firestore';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { 
+  Plus, Calendar, User, AlignLeft, X, Clock, Loader2, Sparkles 
+} from 'lucide-react';
 
-// Updated Collection Name
+// --- 1. CONFIGURATION ---
+// We initialize Firebase inside this file so you don't need a separate firebase.js file.
+// This prevents the "Could not resolve ./firebase" error.
+const getFirebaseConfig = () => {
+  // If running in the preview window
+  if (typeof __firebase_config !== 'undefined') {
+    return JSON.parse(__firebase_config);
+  }
+  // If running on Railway (Production)
+  return {
+    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId: import.meta.env.VITE_FIREBASE_APP_ID
+  };
+};
+
+const app = initializeApp(getFirebaseConfig());
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// --- 2. CONSTANTS ---
 const COLLECTION_NAME = 'doboard_tasks';
-
 const COLUMNS = [
   { id: 'todo', label: 'To Do', color: 'bg-gray-100 text-gray-600' },
   { id: 'doing', label: 'In Progress', color: 'bg-blue-50 text-blue-600' },
@@ -14,6 +40,7 @@ const COLUMNS = [
   { id: 'done', label: 'Done', color: 'bg-green-50 text-green-600' }
 ];
 
+// --- 3. HELPER COMPONENTS ---
 const Button = ({ children, onClick, variant = 'primary', className = '', ...props }) => {
   const baseStyle = "px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200 flex items-center gap-2";
   const variants = {
@@ -24,6 +51,33 @@ const Button = ({ children, onClick, variant = 'primary', className = '', ...pro
   return <button onClick={onClick} className={`${baseStyle} ${variants[variant]} ${className}`} {...props}>{children}</button>;
 };
 
+// --- 4. EMPTY STATE (Notion Style) ---
+const EmptyState = ({ onCreate }) => (
+  <div className="flex flex-col items-center justify-center h-full w-full animate-in fade-in duration-700 p-8">
+    <div className="w-64 h-64 mb-6 relative opacity-90">
+       {/* Abstract Minimalist Illustration */}
+       <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full drop-shadow-sm">
+        <rect x="40" y="40" width="120" height="140" rx="2" fill="white" stroke="#E5E7EB" strokeWidth="2"/>
+        <rect x="55" y="60" width="90" height="8" rx="1" fill="#F3F4F6"/>
+        <rect x="55" y="80" width="60" height="6" rx="1" fill="#F3F4F6"/>
+        <path d="M140 160L180 120" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round"/>
+        <circle cx="170" cy="50" r="15" fill="#FEF3C7" stroke="#FBBF24" strokeWidth="2"/>
+        <path d="M165 130C165 130 170 110 190 115" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeDasharray="4 4"/>
+        <rect x="20" y="80" width="30" height="30" rx="4" transform="rotate(-15 35 95)" fill="white" stroke="#E5E7EB" strokeWidth="2"/>
+        <rect x="150" y="140" width="40" height="25" rx="4" transform="rotate(10 170 152.5)" fill="white" stroke="#E5E7EB" strokeWidth="2"/>
+      </svg>
+    </div>
+    <h2 className="text-xl font-semibold text-gray-800 mb-2">You're all caught up!</h2>
+    <p className="text-gray-500 max-w-sm text-center mb-8 leading-relaxed">
+      Your board is currently empty. Create a task to start tracking your projects and deadlines.
+    </p>
+    <Button onClick={onCreate} className="pl-4 pr-5 py-2.5">
+      <Sparkles size={16} /> Create First Task
+    </Button>
+  </div>
+);
+
+// --- 5. MAIN APP COMPONENT ---
 export default function App() {
   const [user, setUser] = useState(null);
   const [tasks, setTasks] = useState([]);
@@ -31,14 +85,29 @@ export default function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
 
+  // Authentication
   useEffect(() => {
-    signInAnonymously(auth).catch(console.error);
+    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+         import('firebase/auth').then(({ signInWithCustomToken }) => {
+            signInWithCustomToken(auth, __initial_auth_token);
+         });
+    } else {
+        signInAnonymously(auth).catch(console.error);
+    }
     return onAuthStateChanged(auth, setUser);
   }, []);
 
+  // Data Fetching
   useEffect(() => {
     if (!user) return;
-    const q = query(collection(db, COLLECTION_NAME));
+    
+    // Determine the correct database path based on environment
+    const collectionRef = typeof __app_id !== 'undefined' 
+        ? collection(db, 'artifacts', __app_id, 'public', 'data', COLLECTION_NAME)
+        : collection(db, COLLECTION_NAME);
+    
+    const q = query(collectionRef);
+    
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const taskList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       taskList.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
@@ -51,13 +120,25 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
+  // Save Task
   const handleSaveTask = async (taskData) => {
     if (!user) return;
     try {
-      const collectionRef = collection(db, COLLECTION_NAME);
+      const collectionRef = typeof __app_id !== 'undefined' 
+          ? collection(db, 'artifacts', __app_id, 'public', 'data', COLLECTION_NAME)
+          : collection(db, COLLECTION_NAME);
+      
       if (taskData.id) {
-        await updateDoc(doc(db, COLLECTION_NAME, taskData.id), {
-          title: taskData.title, client: taskData.client, deadline: taskData.deadline, brief: taskData.brief, status: taskData.status || 'todo'
+        const docPath = typeof __app_id !== 'undefined' 
+            ? `artifacts/${__app_id}/public/data/${COLLECTION_NAME}/${taskData.id}`
+            : `${COLLECTION_NAME}/${taskData.id}`;
+            
+        await updateDoc(doc(db, docPath), {
+          title: taskData.title, 
+          client: taskData.client, 
+          deadline: taskData.deadline, 
+          brief: taskData.brief, 
+          status: taskData.status || 'todo'
         });
       } else {
         await addDoc(collectionRef, { ...taskData, status: 'todo', createdAt: serverTimestamp(), createdBy: user.uid });
@@ -66,13 +147,26 @@ export default function App() {
     } catch (error) { console.error(error); }
   };
 
+  // Delete Task
   const handleDeleteTask = async (taskId) => {
     if (!confirm("Delete this task?")) return;
-    try { await deleteDoc(doc(db, COLLECTION_NAME, taskId)); setIsModalOpen(false); } catch (e) { console.error(e); }
+    try { 
+        const docPath = typeof __app_id !== 'undefined' 
+            ? `artifacts/${__app_id}/public/data/${COLLECTION_NAME}/${taskId}`
+            : `${COLLECTION_NAME}/${taskId}`;
+        await deleteDoc(doc(db, docPath)); 
+        setIsModalOpen(false); 
+    } catch (e) { console.error(e); }
   };
 
+  // Update Status (Drag & Drop)
   const handleStatusChange = async (taskId, newStatus) => {
-    try { await updateDoc(doc(db, COLLECTION_NAME, taskId), { status: newStatus }); } catch (e) { console.error(e); }
+    try { 
+        const docPath = typeof __app_id !== 'undefined' 
+            ? `artifacts/${__app_id}/public/data/${COLLECTION_NAME}/${taskId}`
+            : `${COLLECTION_NAME}/${taskId}`;
+        await updateDoc(doc(db, docPath), { status: newStatus }); 
+    } catch (e) { console.error(e); }
   };
 
   const onDragStart = (e, taskId) => { e.dataTransfer.setData("taskId", taskId); };
@@ -83,20 +177,30 @@ export default function App() {
     if (taskId) handleStatusChange(taskId, targetStatus);
   };
 
+  const openNewTask = () => { setEditingTask(null); setIsModalOpen(true); };
+
   return (
     <div className="min-h-screen bg-white text-gray-900 font-sans selection:bg-blue-100">
       <nav className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-gray-100 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          {/* Logo updated to 'D' */}
           <div className="w-8 h-8 bg-black rounded flex items-center justify-center text-white font-bold text-lg">D</div>
-          {/* Title updated to DoBoard */}
           <h1 className="font-semibold text-lg tracking-tight">DoBoard</h1>
         </div>
-        <Button onClick={() => { setEditingTask(null); setIsModalOpen(true); }}><Plus size={16} /> New Task</Button>
+        <Button onClick={openNewTask}><Plus size={16} /> New Task</Button>
       </nav>
 
-      <main className="p-6 h-[calc(100vh-80px)] overflow-x-auto">
-        {loading ? <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin text-gray-300" size={32} /></div> : (
+      <main className="p-6 h-[calc(100vh-80px)] overflow-x-auto flex flex-col">
+        {loading ? (
+          <div className="flex items-center justify-center h-full flex-1">
+            <Loader2 className="animate-spin text-gray-300" size={32} />
+          </div>
+        ) : tasks.length === 0 ? (
+          // --- RENDER EMPTY STATE IF NO TASKS ---
+          <div className="flex-1 flex items-center justify-center">
+            <EmptyState onCreate={openNewTask} />
+          </div>
+        ) : (
+          // --- RENDER BOARD IF TASKS EXIST ---
           <div className="flex gap-6 min-w-[1000px] h-full">
             {COLUMNS.map(col => (
               <div key={col.id} className="flex-1 flex flex-col min-w-[280px]" onDragOver={onDragOver} onDrop={(e) => onDrop(e, col.id)}>
@@ -117,6 +221,9 @@ export default function App() {
                       </div>
                     </div>
                   ))}
+                  {tasks.filter(t => t.status === col.id).length === 0 && (
+                    <div className="h-24 border-2 border-dashed border-gray-100 rounded-lg flex items-center justify-center text-gray-300 text-sm">Drop here</div>
+                  )}
                 </div>
               </div>
             ))}
@@ -124,6 +231,7 @@ export default function App() {
         )}
       </main>
 
+      {/* MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setIsModalOpen(false)}></div>
