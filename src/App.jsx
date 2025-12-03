@@ -4,21 +4,23 @@ import { getFirestore, collection, addDoc, updateDoc, doc, deleteDoc, onSnapshot
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { Plus, Calendar, User, AlignLeft, Clock, Loader2, Sparkles, UserCircle2, AlertCircle } from 'lucide-react';
 
-// --- 1. CONFIGURATION (HARDCODED) ---
-// These are your specific keys. They are hardcoded so they cannot be missing.
+// --- YOUR EXACT FIREBASE CONFIGURATION ---
 const firebaseConfig = {
-  apiKey: "AIzaSyC2P7U9SdXQTEjdku4A6dKA3OaOqXxwo_4",
+  apiKey: "AIzaSyC2P7U9sDxQTEjdku4A6dKA3OaOqXxwo_4",
   authDomain: "doboard-449ba.firebaseapp.com",
   projectId: "doboard-449ba",
   storageBucket: "doboard-449ba.firebasestorage.app",
   messagingSenderId: "237145709336",
-  appId: "1:237145709336:web:469136848f63b71bcd9c6d"
+  appId: "1:237145709336:web:469136848f63b71bcd9c6d",
+  measurementId: "G-RGC4XWECHW"
 };
 
+// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
+// --- APP CONSTANTS ---
 const COLLECTION_NAME = 'doboard_tasks';
 const COLUMNS = [
   { id: 'todo', label: 'To Do', color: 'bg-gray-100 text-gray-600' },
@@ -37,6 +39,7 @@ const Button = ({ children, onClick, variant = 'primary', className = '', ...pro
   return <button onClick={onClick} className={`${baseStyle} ${variants[variant]} ${className}`} {...props}>{children}</button>;
 };
 
+// --- EMPTY STATE UI ---
 const EmptyState = ({ onCreate }) => (
   <div className="flex flex-col items-center justify-center h-full w-full animate-in fade-in duration-700 p-8">
     <div className="w-64 h-64 mb-6 relative opacity-90 grayscale-[20%]">
@@ -48,6 +51,7 @@ const EmptyState = ({ onCreate }) => (
   </div>
 );
 
+// --- MAIN APPLICATION ---
 export default function App() {
   const [user, setUser] = useState(null);
   const [tasks, setTasks] = useState([]);
@@ -57,13 +61,14 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState(null);
 
   useEffect(() => {
-    // Attempt sign in immediately
+    // 1. Authenticate immediately
     signInAnonymously(auth).catch((error) => setErrorMsg("Auth Error: " + error.message));
     return onAuthStateChanged(auth, setUser);
   }, []);
 
   useEffect(() => {
     if (!user) return;
+    // 2. Fetch data once authenticated
     const q = query(collection(db, COLLECTION_NAME));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const taskList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -118,11 +123,8 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-white text-gray-900 font-sans selection:bg-blue-100 flex flex-col">
-      {/* VISUAL INDICATOR: I changed the header to green. 
-         If this bar is NOT green on your website, the new code hasn't loaded yet.
-      */}
-      <nav className="sticky top-0 z-30 bg-green-50 backdrop-blur-md border-b border-green-100 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3"><div className="w-8 h-8 bg-black rounded flex items-center justify-center text-white font-bold text-lg">D</div><h1 className="font-semibold text-lg tracking-tight">DoBoard Fixed</h1></div>
+      <nav className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-3"><div className="w-8 h-8 bg-black rounded flex items-center justify-center text-white font-bold text-lg">D</div><h1 className="font-semibold text-lg tracking-tight">DoBoard</h1></div>
         <Button onClick={openNewTask}><Plus size={16} /> New Task</Button>
       </nav>
       <main className="flex-1 p-6 overflow-hidden flex flex-col">
