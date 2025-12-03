@@ -8,30 +8,24 @@ import {
   Plus, Calendar, User, AlignLeft, Clock, Loader2, Sparkles, UserCircle2, AlertCircle
 } from 'lucide-react';
 
-// --- CONFIGURATION ---
-// We are hardcoding your keys here to guarantee connection.
-const getFirebaseConfig = () => {
-  // 1. Preview Environment Check (Keep this for the chat window)
-  if (typeof __firebase_config !== 'undefined') {
-    return JSON.parse(__firebase_config);
-  }
-
-  // 2. Production Config (Hardcoded for DoBoard)
-  return {
-    apiKey: "AIzaSyC2P7U9SdXQTEjdku4A6dKA3OaOqXxwo_4",
-    authDomain: "doboard-449ba.firebaseapp.com",
-    projectId: "doboard-449ba",
-    storageBucket: "doboard-449ba.firebasestorage.app",
-    messagingSenderId: "237145709336",
-    appId: "1:237145709336:web:469136848f63b71bcd9c6d"
-  };
+// --- 1. CONFIGURATION (HARDCODED) ---
+// We removed all "if/else" logic. We are passing the keys directly.
+// This guarantees the app has the keys.
+const firebaseConfig = {
+  apiKey: "AIzaSyC2P7U9SdXQTEjdku4A6dKA3OaOqXxwo_4",
+  authDomain: "doboard-449ba.firebaseapp.com",
+  projectId: "doboard-449ba",
+  storageBucket: "doboard-449ba.firebasestorage.app",
+  messagingSenderId: "237145709336",
+  appId: "1:237145709336:web:469136848f63b71bcd9c6d"
 };
 
-const app = initializeApp(getFirebaseConfig());
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// --- CONSTANTS ---
+// --- 2. CONSTANTS ---
 const COLLECTION_NAME = 'doboard_tasks';
 const COLUMNS = [
   { id: 'todo', label: 'To Do', color: 'bg-gray-100 text-gray-600' },
@@ -86,15 +80,10 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState(null);
 
   useEffect(() => {
-    // Auth Logic
+    // Simplified Auth Logic
     const initAuth = async () => {
         try {
-            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                const { signInWithCustomToken } = await import('firebase/auth');
-                await signInWithCustomToken(auth, __initial_auth_token);
-            } else {
-                await signInAnonymously(auth);
-            }
+            await signInAnonymously(auth);
         } catch (error) {
             console.error(error);
             setErrorMsg("Auth Error: " + error.message);
@@ -107,12 +96,8 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     
-    // Determine path based on environment
-    const collectionRef = typeof __app_id !== 'undefined' 
-        ? collection(db, 'artifacts', __app_id, 'public', 'data', COLLECTION_NAME)
-        : collection(db, COLLECTION_NAME);
-    
-    const q = query(collectionRef);
+    // Simplified Collection Path (Directly to root)
+    const q = query(collection(db, COLLECTION_NAME));
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const taskList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -131,15 +116,10 @@ export default function App() {
   const handleSaveTask = async (taskData) => {
     if (!user) return;
     try {
-      const collectionRef = typeof __app_id !== 'undefined' 
-          ? collection(db, 'artifacts', __app_id, 'public', 'data', COLLECTION_NAME)
-          : collection(db, COLLECTION_NAME);
+      const collectionRef = collection(db, COLLECTION_NAME);
       
       if (taskData.id) {
-        const docPath = typeof __app_id !== 'undefined' 
-            ? `artifacts/${__app_id}/public/data/${COLLECTION_NAME}/${taskData.id}`
-            : `${COLLECTION_NAME}/${taskData.id}`;
-        await updateDoc(doc(db, docPath), {
+        await updateDoc(doc(db, COLLECTION_NAME, taskData.id), {
           title: taskData.title, 
           client: taskData.client, 
           deadline: taskData.deadline, 
@@ -156,20 +136,14 @@ export default function App() {
   const handleDeleteTask = async (taskId) => {
     if (!confirm("Delete this task?")) return;
     try { 
-        const docPath = typeof __app_id !== 'undefined' 
-            ? `artifacts/${__app_id}/public/data/${COLLECTION_NAME}/${taskId}`
-            : `${COLLECTION_NAME}/${taskId}`;
-        await deleteDoc(doc(db, docPath)); 
+        await deleteDoc(doc(db, COLLECTION_NAME, taskId)); 
         setIsModalOpen(false); 
     } catch (e) { alert("Error deleting: " + e.message); }
   };
 
   const handleStatusChange = async (taskId, newStatus) => {
     try { 
-        const docPath = typeof __app_id !== 'undefined' 
-            ? `artifacts/${__app_id}/public/data/${COLLECTION_NAME}/${taskId}`
-            : `${COLLECTION_NAME}/${taskId}`;
-        await updateDoc(doc(db, docPath), { status: newStatus }); 
+        await updateDoc(doc(db, COLLECTION_NAME, taskId), { status: newStatus }); 
     } catch (e) { console.error(e); }
   };
 
