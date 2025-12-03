@@ -5,17 +5,12 @@ import {
 } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { 
-  Plus, Calendar, User, AlignLeft, Clock, Loader2, Sparkles, UserCircle2 
+  Plus, Calendar, User, AlignLeft, Clock, Loader2, Sparkles, UserCircle2, AlertCircle
 } from 'lucide-react';
 
-// --- 1. CONFIGURATION ---
-// We initialize Firebase directly here to prevent import errors
+// --- CONFIGURATION ---
 const getFirebaseConfig = () => {
-  // If we are in the Preview Environment
-  if (typeof __firebase_config !== 'undefined') {
-    return JSON.parse(__firebase_config);
-  }
-  // If we are in Production (Railway)
+  if (typeof __firebase_config !== 'undefined') return JSON.parse(__firebase_config);
   return {
     apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
     authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -30,7 +25,6 @@ const app = initializeApp(getFirebaseConfig());
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// --- 2. CONSTANTS ---
 const COLLECTION_NAME = 'doboard_tasks';
 const COLUMNS = [
   { id: 'todo', label: 'To Do', color: 'bg-gray-100 text-gray-600' },
@@ -39,7 +33,6 @@ const COLUMNS = [
   { id: 'done', label: 'Done', color: 'bg-green-50 text-green-600' }
 ];
 
-// --- 3. COMPONENTS ---
 const Button = ({ children, onClick, variant = 'primary', className = '', ...props }) => {
   const baseStyle = "px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200 flex items-center gap-2";
   const variants = {
@@ -50,25 +43,17 @@ const Button = ({ children, onClick, variant = 'primary', className = '', ...pro
   return <button onClick={onClick} className={`${baseStyle} ${variants[variant]} ${className}`} {...props}>{children}</button>;
 };
 
-// --- EMPTY STATE (THE NOTION STYLE ILLUSTRATION) ---
 const EmptyState = ({ onCreate }) => (
   <div className="flex flex-col items-center justify-center h-full w-full animate-in fade-in duration-700 p-8">
     <div className="w-64 h-64 mb-6 relative opacity-90 grayscale-[20%]">
-       {/* Minimalist Abstract Illustration */}
        <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full drop-shadow-sm">
-        {/* Background Card */}
         <rect x="50" y="40" width="100" height="130" rx="4" fill="white" stroke="#E5E7EB" strokeWidth="2"/>
-        {/* Lines representing text */}
         <rect x="65" y="60" width="70" height="6" rx="1" fill="#F3F4F6"/>
         <rect x="65" y="75" width="40" height="6" rx="1" fill="#F3F4F6"/>
         <rect x="65" y="90" width="70" height="6" rx="1" fill="#F3F4F6"/>
-        
-        {/* Floating Elements */}
         <circle cx="160" cy="50" r="12" fill="#FEF3C7" stroke="#FBBF24" strokeWidth="2"/>
         <path d="M140 140L170 110" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round"/>
         <path d="M160 120C160 120 165 100 185 105" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeDasharray="4 4"/>
-        
-        {/* Small task card floating */}
         <rect x="30" y="90" width="40" height="30" rx="3" transform="rotate(-15 40 100)" fill="white" stroke="#E5E7EB" strokeWidth="2"/>
         <circle cx="40" cy="100" r="3" fill="#E5E7EB"/>
       </svg>
@@ -83,31 +68,34 @@ const EmptyState = ({ onCreate }) => (
   </div>
 );
 
-// --- 4. MAIN APP ---
 export default function App() {
   const [user, setUser] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
+  
+  // NEW: Error State to show you what is wrong
+  const [errorMsg, setErrorMsg] = useState(null);
 
-  // Auth
   useEffect(() => {
     if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
          import('firebase/auth').then(({ signInWithCustomToken }) => {
             signInWithCustomToken(auth, __initial_auth_token);
          });
     } else {
-        signInAnonymously(auth).catch(console.error);
+        // We catch the error here to show it to you
+        signInAnonymously(auth).catch((error) => {
+            console.error(error);
+            setErrorMsg("Auth Error: " + error.message);
+        });
     }
     return onAuthStateChanged(auth, setUser);
   }, []);
 
-  // Data
   useEffect(() => {
     if (!user) return;
     
-    // Determine Collection Path
     const collectionRef = typeof __app_id !== 'undefined' 
         ? collection(db, 'artifacts', __app_id, 'public', 'data', COLLECTION_NAME)
         : collection(db, COLLECTION_NAME);
@@ -120,8 +108,9 @@ export default function App() {
       setTasks(taskList);
       setLoading(false);
     }, (error) => {
-      console.error("Error fetching tasks:", error);
-      // Even if error, stop loading so we can at least see empty state (or error state)
+      console.error(error);
+      // We catch the database error here
+      setErrorMsg("Database Error: " + error.message);
       setLoading(false);
     });
     return () => unsubscribe();
@@ -150,7 +139,9 @@ export default function App() {
         await addDoc(collectionRef, { ...taskData, status: 'todo', createdAt: serverTimestamp(), createdBy: user.uid });
       }
       setIsModalOpen(false);
-    } catch (error) { console.error(error); }
+    } catch (error) { 
+        alert("Error saving: " + error.message);
+    }
   };
 
   const handleDeleteTask = async (taskId) => {
@@ -161,7 +152,7 @@ export default function App() {
             : `${COLLECTION_NAME}/${taskId}`;
         await deleteDoc(doc(db, docPath)); 
         setIsModalOpen(false); 
-    } catch (e) { console.error(e); }
+    } catch (e) { alert("Error deleting: " + e.message); }
   };
 
   const handleStatusChange = async (taskId, newStatus) => {
@@ -183,6 +174,20 @@ export default function App() {
 
   const openNewTask = () => { setEditingTask(null); setIsModalOpen(true); };
 
+  // --- ERROR SCREEN ---
+  if (errorMsg) {
+    return (
+        <div className="flex flex-col items-center justify-center min-h-screen bg-red-50 p-6 text-center">
+            <AlertCircle className="text-red-500 mb-4" size={48} />
+            <h1 className="text-2xl font-bold text-red-900 mb-2">Something went wrong</h1>
+            <div className="bg-white p-4 rounded border border-red-200 shadow-sm max-w-lg overflow-auto">
+                <code className="text-red-600 font-mono text-sm">{errorMsg}</code>
+            </div>
+            <p className="mt-6 text-gray-600">Please take a screenshot of this message and send it to me.</p>
+        </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-white text-gray-900 font-sans selection:bg-blue-100 flex flex-col">
       <nav className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-gray-100 px-6 py-4 flex items-center justify-between">
@@ -195,11 +200,11 @@ export default function App() {
 
       <main className="flex-1 p-6 overflow-hidden flex flex-col">
         {loading ? (
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex-1 flex items-center justify-center flex-col gap-4">
             <Loader2 className="animate-spin text-gray-300" size={32} />
+            <p className="text-gray-400 text-sm">Connecting to database...</p>
           </div>
         ) : tasks.length === 0 ? (
-          // --- THIS IS THE EMPTY STATE ---
           <div className="flex-1 flex items-center justify-center">
             <EmptyState onCreate={openNewTask} />
           </div>
@@ -234,7 +239,7 @@ export default function App() {
         )}
       </main>
 
-      {/* Modal logic ... */}
+      {/* Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setIsModalOpen(false)}></div>
@@ -265,15 +270,3 @@ export default function App() {
     </div>
   );
 }
-```
-
-### Important: Why you might still see the spinner
-
-If you update the code and **still** see the spinner spinning forever:
-
-1.  This means your app is **unable to connect** to the database to check if there are tasks.
-2.  The most common reason is that **Firestore Rules** are blocking the connection.
-3.  Go to **Firebase Console** -> **Firestore Database** -> **Rules** tab.
-4.  Make sure your rules look like this (Test Mode):
-    ```
-    allow read, write: if true;
