@@ -5,18 +5,17 @@ import {
 } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { 
-  Plus, Calendar, User, AlignLeft, X, Clock, Loader2, Sparkles 
+  Plus, Calendar, User, AlignLeft, Clock, Loader2, Sparkles, UserCircle2 
 } from 'lucide-react';
 
 // --- 1. CONFIGURATION ---
-// We initialize Firebase inside this file so you don't need a separate firebase.js file.
-// This prevents the "Could not resolve ./firebase" error.
+// We initialize Firebase directly here to prevent import errors
 const getFirebaseConfig = () => {
-  // If running in the preview window
+  // If we are in the Preview Environment
   if (typeof __firebase_config !== 'undefined') {
     return JSON.parse(__firebase_config);
   }
-  // If running on Railway (Production)
+  // If we are in Production (Railway)
   return {
     apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
     authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -36,11 +35,11 @@ const COLLECTION_NAME = 'doboard_tasks';
 const COLUMNS = [
   { id: 'todo', label: 'To Do', color: 'bg-gray-100 text-gray-600' },
   { id: 'doing', label: 'In Progress', color: 'bg-blue-50 text-blue-600' },
-  { id: 'feedback', label: 'Waiting for Feedback', color: 'bg-yellow-50 text-yellow-600' },
+  { id: 'feedback', label: 'Feedback', color: 'bg-yellow-50 text-yellow-600' },
   { id: 'done', label: 'Done', color: 'bg-green-50 text-green-600' }
 ];
 
-// --- 3. HELPER COMPONENTS ---
+// --- 3. COMPONENTS ---
 const Button = ({ children, onClick, variant = 'primary', className = '', ...props }) => {
   const baseStyle = "px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200 flex items-center gap-2";
   const variants = {
@@ -51,33 +50,40 @@ const Button = ({ children, onClick, variant = 'primary', className = '', ...pro
   return <button onClick={onClick} className={`${baseStyle} ${variants[variant]} ${className}`} {...props}>{children}</button>;
 };
 
-// --- 4. EMPTY STATE (Notion Style) ---
+// --- EMPTY STATE (THE NOTION STYLE ILLUSTRATION) ---
 const EmptyState = ({ onCreate }) => (
   <div className="flex flex-col items-center justify-center h-full w-full animate-in fade-in duration-700 p-8">
-    <div className="w-64 h-64 mb-6 relative opacity-90">
-       {/* Abstract Minimalist Illustration */}
+    <div className="w-64 h-64 mb-6 relative opacity-90 grayscale-[20%]">
+       {/* Minimalist Abstract Illustration */}
        <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full drop-shadow-sm">
-        <rect x="40" y="40" width="120" height="140" rx="2" fill="white" stroke="#E5E7EB" strokeWidth="2"/>
-        <rect x="55" y="60" width="90" height="8" rx="1" fill="#F3F4F6"/>
-        <rect x="55" y="80" width="60" height="6" rx="1" fill="#F3F4F6"/>
-        <path d="M140 160L180 120" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round"/>
-        <circle cx="170" cy="50" r="15" fill="#FEF3C7" stroke="#FBBF24" strokeWidth="2"/>
-        <path d="M165 130C165 130 170 110 190 115" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeDasharray="4 4"/>
-        <rect x="20" y="80" width="30" height="30" rx="4" transform="rotate(-15 35 95)" fill="white" stroke="#E5E7EB" strokeWidth="2"/>
-        <rect x="150" y="140" width="40" height="25" rx="4" transform="rotate(10 170 152.5)" fill="white" stroke="#E5E7EB" strokeWidth="2"/>
+        {/* Background Card */}
+        <rect x="50" y="40" width="100" height="130" rx="4" fill="white" stroke="#E5E7EB" strokeWidth="2"/>
+        {/* Lines representing text */}
+        <rect x="65" y="60" width="70" height="6" rx="1" fill="#F3F4F6"/>
+        <rect x="65" y="75" width="40" height="6" rx="1" fill="#F3F4F6"/>
+        <rect x="65" y="90" width="70" height="6" rx="1" fill="#F3F4F6"/>
+        
+        {/* Floating Elements */}
+        <circle cx="160" cy="50" r="12" fill="#FEF3C7" stroke="#FBBF24" strokeWidth="2"/>
+        <path d="M140 140L170 110" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round"/>
+        <path d="M160 120C160 120 165 100 185 105" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeDasharray="4 4"/>
+        
+        {/* Small task card floating */}
+        <rect x="30" y="90" width="40" height="30" rx="3" transform="rotate(-15 40 100)" fill="white" stroke="#E5E7EB" strokeWidth="2"/>
+        <circle cx="40" cy="100" r="3" fill="#E5E7EB"/>
       </svg>
     </div>
-    <h2 className="text-xl font-semibold text-gray-800 mb-2">You're all caught up!</h2>
+    <h2 className="text-xl font-semibold text-gray-900 mb-2">It's quiet here...</h2>
     <p className="text-gray-500 max-w-sm text-center mb-8 leading-relaxed">
-      Your board is currently empty. Create a task to start tracking your projects and deadlines.
+      You have no tasks on your board. Create a new task to get started with your project tracking.
     </p>
-    <Button onClick={onCreate} className="pl-4 pr-5 py-2.5">
+    <Button onClick={onCreate} className="pl-4 pr-5 py-2.5 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all">
       <Sparkles size={16} /> Create First Task
     </Button>
   </div>
 );
 
-// --- 5. MAIN APP COMPONENT ---
+// --- 4. MAIN APP ---
 export default function App() {
   const [user, setUser] = useState(null);
   const [tasks, setTasks] = useState([]);
@@ -85,7 +91,7 @@ export default function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
 
-  // Authentication
+  // Auth
   useEffect(() => {
     if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
          import('firebase/auth').then(({ signInWithCustomToken }) => {
@@ -97,11 +103,11 @@ export default function App() {
     return onAuthStateChanged(auth, setUser);
   }, []);
 
-  // Data Fetching
+  // Data
   useEffect(() => {
     if (!user) return;
     
-    // Determine the correct database path based on environment
+    // Determine Collection Path
     const collectionRef = typeof __app_id !== 'undefined' 
         ? collection(db, 'artifacts', __app_id, 'public', 'data', COLLECTION_NAME)
         : collection(db, COLLECTION_NAME);
@@ -115,12 +121,13 @@ export default function App() {
       setLoading(false);
     }, (error) => {
       console.error("Error fetching tasks:", error);
+      // Even if error, stop loading so we can at least see empty state (or error state)
       setLoading(false);
     });
     return () => unsubscribe();
   }, [user]);
 
-  // Save Task
+  // Actions
   const handleSaveTask = async (taskData) => {
     if (!user) return;
     try {
@@ -132,7 +139,6 @@ export default function App() {
         const docPath = typeof __app_id !== 'undefined' 
             ? `artifacts/${__app_id}/public/data/${COLLECTION_NAME}/${taskData.id}`
             : `${COLLECTION_NAME}/${taskData.id}`;
-            
         await updateDoc(doc(db, docPath), {
           title: taskData.title, 
           client: taskData.client, 
@@ -147,7 +153,6 @@ export default function App() {
     } catch (error) { console.error(error); }
   };
 
-  // Delete Task
   const handleDeleteTask = async (taskId) => {
     if (!confirm("Delete this task?")) return;
     try { 
@@ -159,7 +164,6 @@ export default function App() {
     } catch (e) { console.error(e); }
   };
 
-  // Update Status (Drag & Drop)
   const handleStatusChange = async (taskId, newStatus) => {
     try { 
         const docPath = typeof __app_id !== 'undefined' 
@@ -180,7 +184,7 @@ export default function App() {
   const openNewTask = () => { setEditingTask(null); setIsModalOpen(true); };
 
   return (
-    <div className="min-h-screen bg-white text-gray-900 font-sans selection:bg-blue-100">
+    <div className="min-h-screen bg-white text-gray-900 font-sans selection:bg-blue-100 flex flex-col">
       <nav className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-gray-100 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-black rounded flex items-center justify-center text-white font-bold text-lg">D</div>
@@ -189,19 +193,18 @@ export default function App() {
         <Button onClick={openNewTask}><Plus size={16} /> New Task</Button>
       </nav>
 
-      <main className="p-6 h-[calc(100vh-80px)] overflow-x-auto flex flex-col">
+      <main className="flex-1 p-6 overflow-hidden flex flex-col">
         {loading ? (
-          <div className="flex items-center justify-center h-full flex-1">
+          <div className="flex-1 flex items-center justify-center">
             <Loader2 className="animate-spin text-gray-300" size={32} />
           </div>
         ) : tasks.length === 0 ? (
-          // --- RENDER EMPTY STATE IF NO TASKS ---
+          // --- THIS IS THE EMPTY STATE ---
           <div className="flex-1 flex items-center justify-center">
             <EmptyState onCreate={openNewTask} />
           </div>
         ) : (
-          // --- RENDER BOARD IF TASKS EXIST ---
-          <div className="flex gap-6 min-w-[1000px] h-full">
+          <div className="flex gap-6 h-full overflow-x-auto pb-4">
             {COLUMNS.map(col => (
               <div key={col.id} className="flex-1 flex flex-col min-w-[280px]" onDragOver={onDragOver} onDrop={(e) => onDrop(e, col.id)}>
                 <div className="flex items-center justify-between mb-4 px-1">
@@ -213,7 +216,7 @@ export default function App() {
                     <div key={task.id} draggable onDragStart={(e) => onDragStart(e, task.id)} onClick={() => { setEditingTask(task); setIsModalOpen(true); }} className="bg-white p-3 rounded-md shadow-sm border border-gray-200/60 mb-3 cursor-grab hover:shadow-md transition-all">
                       <div className="font-medium text-gray-800 text-sm mb-2">{task.title}</div>
                       <div className="space-y-2">
-                        {task.client && <div className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-purple-50 text-purple-700 border border-purple-100"><User size={10} className="mr-1" />{task.client}</div>}
+                        {task.client && <div className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-purple-50 text-purple-700 border border-purple-100"><UserCircle2 size={12} className="mr-1" />{task.client}</div>}
                         <div className="flex items-center justify-between">
                           {task.deadline && <div className="flex items-center text-xs text-gray-500"><Clock size={12} className="mr-1" />{task.deadline}</div>}
                           {task.brief && <AlignLeft size={12} className="text-gray-400" />}
@@ -222,7 +225,7 @@ export default function App() {
                     </div>
                   ))}
                   {tasks.filter(t => t.status === col.id).length === 0 && (
-                    <div className="h-24 border-2 border-dashed border-gray-100 rounded-lg flex items-center justify-center text-gray-300 text-sm">Drop here</div>
+                    <div className="h-24 border-2 border-dashed border-gray-100 rounded-lg flex items-center justify-center text-gray-300 text-sm opacity-50 hover:opacity-100 transition-opacity">Drop here</div>
                   )}
                 </div>
               </div>
@@ -231,12 +234,12 @@ export default function App() {
         )}
       </main>
 
-      {/* MODAL */}
+      {/* Modal logic ... */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setIsModalOpen(false)}></div>
           <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl p-6 space-y-6 animate-in fade-in zoom-in-95">
-            <input type="text" placeholder="Task Title" className="w-full text-3xl font-bold border-none focus:ring-0 p-0" defaultValue={editingTask?.title} id="title-input" />
+            <input type="text" placeholder="Task Title" className="w-full text-3xl font-bold border-none focus:ring-0 p-0 placeholder:text-gray-300" defaultValue={editingTask?.title} id="title-input" autoFocus />
             <div className="space-y-3 bg-gray-50 p-4 rounded-lg">
               <input type="text" placeholder="Client" className="w-full bg-transparent border-b border-gray-200" defaultValue={editingTask?.client} id="client-input" />
               <input type="date" className="w-full bg-transparent border-b border-gray-200" defaultValue={editingTask?.deadline} id="date-input" />
@@ -244,7 +247,7 @@ export default function App() {
                 {COLUMNS.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
               </select>
             </div>
-            <textarea placeholder="Brief..." className="w-full min-h-[150px] border-none focus:ring-0 resize-none" defaultValue={editingTask?.brief} id="brief-input"></textarea>
+            <textarea placeholder="Brief..." className="w-full min-h-[150px] border-none focus:ring-0 resize-none placeholder:text-gray-300" defaultValue={editingTask?.brief} id="brief-input"></textarea>
             <div className="flex justify-end gap-3">
               {editingTask && <Button variant="danger" onClick={() => handleDeleteTask(editingTask.id)}>Delete</Button>}
               <Button onClick={() => handleSaveTask({
@@ -262,3 +265,15 @@ export default function App() {
     </div>
   );
 }
+```
+
+### Important: Why you might still see the spinner
+
+If you update the code and **still** see the spinner spinning forever:
+
+1.  This means your app is **unable to connect** to the database to check if there are tasks.
+2.  The most common reason is that **Firestore Rules** are blocking the connection.
+3.  Go to **Firebase Console** -> **Firestore Database** -> **Rules** tab.
+4.  Make sure your rules look like this (Test Mode):
+    ```
+    allow read, write: if true;
