@@ -9,21 +9,21 @@ import {
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
+// We are hardcoding your keys here to guarantee connection.
 const getFirebaseConfig = () => {
-  // 1. Preview Environment Check
+  // 1. Preview Environment Check (Keep this for the chat window)
   if (typeof __firebase_config !== 'undefined') {
     return JSON.parse(__firebase_config);
   }
 
-  // 2. Railway / Production Check
-  // We MUST access these explicitly for Vite to replace them at build time.
+  // 2. Production Config (Hardcoded for DoBoard)
   return {
-    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-    appId: import.meta.env.VITE_FIREBASE_APP_ID
+    apiKey: "AIzaSyC2P7U9SdXQTEjdku4A6dKA3OaOqXxwo_4",
+    authDomain: "doboard-449ba.firebaseapp.com",
+    projectId: "doboard-449ba",
+    storageBucket: "doboard-449ba.firebasestorage.app",
+    messagingSenderId: "237145709336",
+    appId: "1:237145709336:web:469136848f63b71bcd9c6d"
   };
 };
 
@@ -239,7 +239,7 @@ export default function App() {
                     </div>
                   ))}
                   {tasks.filter(t => t.status === col.id).length === 0 && (
-                     <div className="h-24 border-2 border-dashed border-gray-100 rounded-lg flex items-center justify-center text-gray-300 text-sm opacity-50 hover:opacity-100 transition-opacity">Drop here</div>
+                    <div className="h-24 border-2 border-dashed border-gray-100 rounded-lg flex items-center justify-center text-gray-300 text-sm opacity-50 hover:opacity-100 transition-opacity">Drop here</div>
                   )}
                 </div>
               </div>
