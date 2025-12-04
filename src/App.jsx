@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, addDoc, updateDoc, doc, deleteDoc, onSnapshot, query, serverTimestamp } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, updateDoc, doc, deleteDoc, onSnapshot, query, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { 
   Plus, Calendar, User, AlignLeft, Clock, Loader2, Sparkles, 
-  MoreHorizontal, Bold, Italic, Heading1, Heading2, Heading3, List, ListOrdered, X, Trash2, ChevronRight, LayoutGrid, Lock
+  MoreHorizontal, Bold, Italic, Heading1, Heading2, Heading3, List, ListOrdered, X, Trash2, ChevronRight, LayoutGrid, Lock, Pin, PinOff
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
@@ -63,15 +63,15 @@ const PinModal = ({ isOpen, onClose, onConfirm }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={onClose}></div>
       <div className="relative bg-white w-full max-w-sm rounded-xl shadow-2xl p-6 animate-in fade-in zoom-in-95 duration-200">
         <div className="text-center mb-6">
           <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3 text-gray-500">
             <Lock size={20} />
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">Enter PIN</h3>
-          <p className="text-sm text-gray-500">Security check required for this action.</p>
+          <h3 className="text-lg font-semibold text-gray-900">Enter Security PIN</h3>
+          <p className="text-sm text-gray-500">Authorization required for this action.</p>
         </div>
 
         <form onSubmit={handleSubmit}>
@@ -184,6 +184,13 @@ export default function App() {
   
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState(null);
+  const [activeMenuId, setActiveMenuId] = useState(null);
+
+  useEffect(() => {
+    const handleClickOutside = () => setActiveMenuId(null);
+    if (activeMenuId) window.addEventListener('click', handleClickOutside);
+    return () => window.removeEventListener('click', handleClickOutside);
+  }, [activeMenuId]);
 
   useEffect(() => {
     signInAnonymously(auth).catch((e) => alert("Auth Error: " + e.message));
@@ -195,7 +202,10 @@ export default function App() {
     const q = query(collection(db, COLLECTION_NAME));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const taskList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      taskList.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      taskList.sort((a, b) => {
+        if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+        return (a.order || 0) - (b.order || 0);
+      });
       setTasks(taskList);
       setLoading(false);
     });
@@ -226,7 +236,14 @@ export default function App() {
       if (editingTask?.id) {
         await updateDoc(doc(db, COLLECTION_NAME, editingTask.id), finalData);
       } else {
-        await addDoc(collectionRef, { ...finalData, createdAt: serverTimestamp(), createdBy: user.uid });
+        const newOrder = tasks.length > 0 ? Math.max(...tasks.map(t => t.order || 0)) + 1000 : 1000;
+        await addDoc(collectionRef, { 
+          ...finalData, 
+          createdAt: serverTimestamp(), 
+          createdBy: user.uid,
+          order: newOrder,
+          isPinned: false
+        });
       }
       setIsModalOpen(false);
     } catch (error) {
@@ -239,15 +256,52 @@ export default function App() {
     setIsModalOpen(false);
   };
 
-  const handleStatusChange = async (taskId, newStatus) => {
-    await updateDoc(doc(db, COLLECTION_NAME, taskId), { status: newStatus });
+  const togglePinTask = async (task) => {
+    try {
+      await updateDoc(doc(db, COLLECTION_NAME, task.id), { isPinned: !task.isPinned });
+    } catch (error) {
+      console.error("Error pinning", error);
+    }
   };
 
-  const onDragStart = (e, taskId) => e.dataTransfer.setData("taskId", taskId);
-  const onDragOver = (e) => e.preventDefault();
-  const onDrop = (e, status) => {
-    const taskId = e.dataTransfer.getData("taskId");
-    if (taskId) handleStatusChange(taskId, status);
+  const handleDrop = async (e, targetStatus, targetTaskId = null) => {
+    e.preventDefault();
+    const draggedTaskId = e.dataTransfer.getData("taskId");
+    if (!draggedTaskId || draggedTaskId === targetTaskId) return;
+
+    const draggedTask = tasks.find(t => t.id === draggedTaskId);
+    const isPinned = draggedTask.isPinned;
+
+    const targetColumnTasks = tasks
+      .filter(t => t.status === targetStatus && t.id !== draggedTaskId && t.isPinned === isPinned)
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
+
+    let newOrderedTasks = [];
+
+    if (targetTaskId) {
+      const targetIndex = targetColumnTasks.findIndex(t => t.id === targetTaskId);
+      newOrderedTasks = [
+        ...targetColumnTasks.slice(0, targetIndex),
+        { ...draggedTask, status: targetStatus },
+        ...targetColumnTasks.slice(targetIndex)
+      ];
+    } else {
+      newOrderedTasks = [...targetColumnTasks, { ...draggedTask, status: targetStatus }];
+    }
+
+    try {
+        const batch = writeBatch(db);
+        newOrderedTasks.forEach((task, index) => {
+            const docRef = doc(db, COLLECTION_NAME, task.id);
+            batch.update(docRef, { order: (index + 1) * 1000, status: targetStatus });
+        });
+        await batch.commit();
+    } catch (err) { console.error("Reorder failed", err); }
+  };
+
+  const onDragStart = (e, taskId) => {
+    e.dataTransfer.setData("taskId", taskId);
+    e.dataTransfer.effectAllowed = "move";
   };
 
   const openNewTask = () => { setEditingTask(null); setEditorContent(''); setIsModalOpen(true); };
@@ -262,22 +316,16 @@ export default function App() {
         backgroundSize: '24px 24px'
       }}
     >
-      
-      {/* HEADER */}
       <header className="px-4 md:px-8 py-4 md:py-6 flex items-center justify-between sticky top-0 z-20 bg-[#F7F7F5]/90 backdrop-blur-sm border-b border-transparent md:border-none">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-black text-white flex items-center justify-center rounded-md font-bold text-lg shadow-sm">D</div>
           <h1 className="text-xl font-bold tracking-tight hidden md:block">DoBoard</h1>
         </div>
-        <button 
-          onClick={openNewTask} 
-          className="bg-black hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-sm flex items-center gap-2 active:scale-95"
-        >
+        <button onClick={openNewTask} className="bg-black hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-sm flex items-center gap-2 active:scale-95">
           <Plus size={16} /> <span className="hidden sm:inline">New Task</span><span className="sm:hidden">New</span>
         </button>
       </header>
 
-      {/* BOARD CONTENT */}
       <main className="flex-1 px-4 md:px-8 pb-8 overflow-x-auto overflow-y-hidden touch-pan-x">
         {loading ? (
            <div className="h-full flex items-center justify-center"><Loader2 className="animate-spin text-gray-400" size={32}/></div>
@@ -289,41 +337,40 @@ export default function App() {
               <div 
                 key={col.id} 
                 className="flex-none w-[85vw] sm:w-[300px] md:flex-1 flex flex-col h-full snap-center"
-                onDragOver={onDragOver} 
-                onDrop={(e) => onDrop(e, col.id)}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => handleDrop(e, col.id)}
               >
-                {/* Column Header */}
                 <div className="flex items-center justify-between mb-3 px-1 sticky top-0 bg-[#F7F7F5]/80 backdrop-blur-sm z-10 py-2 rounded-lg">
                   <div className="flex items-center gap-2">
-                    <span className={`px-2 py-1 rounded-md text-xs font-semibold ${col.badge}`}>
-                      {col.label}
-                    </span>
-                    <span className="text-gray-400 text-xs font-medium ml-1">
-                      {tasks.filter(t => t.status === col.id).length}
-                    </span>
+                    <span className={`px-2 py-1 rounded-md text-xs font-semibold ${col.badge}`}>{col.label}</span>
+                    <span className="text-gray-400 text-xs font-medium ml-1">{tasks.filter(t => t.status === col.id).length}</span>
                   </div>
                   <div className="md:opacity-0 md:hover:opacity-100 transition-opacity cursor-pointer text-gray-400 hover:text-gray-600 p-1">
                     <Plus size={16} onClick={openNewTask}/>
                   </div>
                 </div>
 
-                {/* Drop Zone */}
                 <div className="flex-1 overflow-y-auto pb-20 pr-1 scrollbar-hide">
                   {tasks.filter(t => t.status === col.id).map(task => (
                     <div 
                       key={task.id}
                       draggable
                       onDragStart={(e) => onDragStart(e, task.id)}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => { e.stopPropagation(); handleDrop(e, col.id, task.id); }}
                       onClick={() => openEditTask(task)}
-                      className="group bg-white p-4 rounded-xl shadow-[0_2px_4px_rgba(0,0,0,0.02)] border border-[#E9E9E7] hover:bg-gray-50 active:scale-[0.98] mb-3 cursor-pointer transition-all relative"
+                      className={`group bg-white p-4 rounded-xl shadow-[0_2px_4px_rgba(0,0,0,0.02)] border hover:bg-gray-50 active:scale-[0.98] mb-3 cursor-pointer transition-all relative ${task.isPinned ? 'border-blue-200 ring-1 ring-blue-100' : 'border-[#E9E9E7]'}`}
                     >
-                      <h3 className="font-medium text-gray-800 mb-2 leading-snug pr-4 text-sm md:text-base">{task.title}</h3>
+                      <div className="flex items-start gap-2 mb-2">
+                        {/* FIX: Move Pin icon to the LEFT side of title to avoid overlap */}
+                        {task.isPinned && <Pin size={14} className="text-blue-500 fill-blue-500 rotate-45 shrink-0 mt-1" />}
+                        <h3 className="font-medium text-gray-800 leading-snug text-sm md:text-base flex-1 pr-6">{task.title}</h3>
+                      </div>
                       
                       <div className="space-y-2">
                         {task.client && (
                           <div className="flex items-center text-xs text-gray-500">
-                            <User size={12} className="mr-1.5 text-gray-400 shrink-0" />
-                            <span className="truncate max-w-[150px]">{task.client}</span>
+                            <User size={12} className="mr-1.5 text-gray-400 shrink-0" /><span className="truncate max-w-[150px]">{task.client}</span>
                           </div>
                         )}
                         {task.deadline && (
@@ -334,16 +381,29 @@ export default function App() {
                         )}
                       </div>
 
-                      <div className="hidden md:block opacity-0 group-hover:opacity-100 absolute top-3 right-3 text-gray-300">
-                        <MoreHorizontal size={14} />
+                      {/* THREE DOTS MENU TRIGGER - Top Right */}
+                      <div className="hidden md:block opacity-0 group-hover:opacity-100 absolute top-3 right-3" onClick={(e) => { e.stopPropagation(); setActiveMenuId(task.id); }}>
+                        <div className="p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-600 transition-colors">
+                           <MoreHorizontal size={16} />
+                        </div>
                       </div>
+
+                      {/* POPUP MENU */}
+                      {activeMenuId === task.id && (
+                        <div className="absolute right-2 top-8 w-40 bg-white rounded-lg shadow-xl border border-gray-100 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-100" onClick={(e) => e.stopPropagation()}>
+                          <button onClick={() => { togglePinTask(task); setActiveMenuId(null); }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
+                            {task.isPinned ? <><PinOff size={14}/> Unpin</> : <><Pin size={14}/> Pin to Top</>}
+                          </button>
+                          <div className="h-px bg-gray-100 my-1"></div>
+                          <button onClick={() => { requirePin(() => performDelete(task.id)); setActiveMenuId(null); }} className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2">
+                            <Trash2 size={14}/> Delete
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
                   
-                  <div 
-                    onClick={openNewTask}
-                    className="flex items-center gap-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-2 rounded-md cursor-pointer transition-colors text-sm mt-1 select-none"
-                  >
+                  <div className="flex items-center gap-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-2 rounded-md cursor-pointer transition-colors text-sm mt-1 select-none" onClick={openNewTask}>
                     <Plus size={14} /> New
                   </div>
                 </div>
@@ -353,104 +413,47 @@ export default function App() {
         )}
       </main>
 
-      {/* TASK MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-4 bg-white md:bg-transparent">
           <div className="absolute inset-0 bg-[#191919]/60 backdrop-blur-sm transition-opacity hidden md:block" onClick={() => setIsModalOpen(false)}></div>
-          
           <div className="relative bg-white w-full md:max-w-2xl md:rounded-xl shadow-none md:shadow-2xl overflow-hidden flex flex-col h-full md:max-h-[90vh] animate-in slide-in-from-bottom-4 md:zoom-in-95 duration-200">
-            {/* Modal Header */}
             <div className="px-4 md:px-6 py-4 border-b border-gray-100 flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm text-gray-500">
                 <span className="text-gray-400 hidden sm:inline">Project</span>
                 <ChevronRight size={14} className="hidden sm:inline" />
-                <span className="text-gray-900 font-medium px-2 py-1 bg-gray-100 rounded text-xs uppercase tracking-wide">
-                  {COLUMNS.find(c => c.id === (editingTask?.status || 'todo'))?.label}
-                </span>
+                <span className="text-gray-900 font-medium px-2 py-1 bg-gray-100 rounded text-xs uppercase tracking-wide">{COLUMNS.find(c => c.id === (editingTask?.status || 'todo'))?.label}</span>
               </div>
               <div className="flex items-center gap-2">
-                {editingTask && (
-                   <button 
-                     onClick={() => requirePin(() => performDelete(editingTask.id))}
-                     className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors" 
-                     title="Delete"
-                   >
-                     <Trash2 size={18} />
-                   </button>
-                )}
-                <button onClick={() => setIsModalOpen(false)} className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors">
-                  <X size={22} />
-                </button>
+                {editingTask && <button onClick={() => requirePin(() => performDelete(editingTask.id))} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"><Trash2 size={18} /></button>}
+                <button onClick={() => setIsModalOpen(false)} className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors"><X size={22} /></button>
               </div>
             </div>
-
-            {/* Modal Content */}
             <div className="flex-1 overflow-y-auto p-4 md:p-8">
-              <input 
-                id="modal-title"
-                type="text" 
-                placeholder="Untitled Task" 
-                defaultValue={editingTask?.title}
-                autoFocus
-                className="w-full text-2xl md:text-3xl font-bold text-gray-900 border-none focus:ring-0 focus:outline-none p-0 mb-6 placeholder:text-gray-300 bg-transparent"
-              />
-
+              <input id="modal-title" type="text" placeholder="Untitled Task" defaultValue={editingTask?.title} autoFocus className="w-full text-2xl md:text-3xl font-bold text-gray-900 border-none focus:ring-0 focus:outline-none p-0 mb-6 placeholder:text-gray-300 bg-transparent"/>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mb-8">
                 <div className="flex items-center gap-3 group bg-gray-50/50 p-2 rounded-lg md:bg-transparent md:p-0">
                   <div className="w-20 md:w-24 text-xs font-medium text-gray-500 flex items-center gap-2 uppercase tracking-wide"><User size={14}/> Client</div>
-                  <input 
-                    id="modal-client" 
-                    type="text" 
-                    placeholder="Empty" 
-                    defaultValue={editingTask?.client} 
-                    className="flex-1 bg-transparent border-none focus:ring-0 focus:outline-none text-sm p-1 md:p-1.5 rounded hover:bg-gray-50 transition-colors text-gray-800 placeholder:text-gray-300"
-                  />
+                  <input id="modal-client" type="text" placeholder="Empty" defaultValue={editingTask?.client} className="flex-1 bg-transparent border-none focus:ring-0 focus:outline-none text-sm p-1 md:p-1.5 rounded hover:bg-gray-50 transition-colors text-gray-800 placeholder:text-gray-300"/>
                 </div>
-
                 <div className="flex items-center gap-3 group bg-gray-50/50 p-2 rounded-lg md:bg-transparent md:p-0">
                   <div className="w-20 md:w-24 text-xs font-medium text-gray-500 flex items-center gap-2 uppercase tracking-wide"><Calendar size={14}/> Due Date</div>
-                  <input 
-                    id="modal-date" 
-                    type="date" 
-                    defaultValue={editingTask?.deadline} 
-                    className="flex-1 bg-transparent border-none focus:ring-0 focus:outline-none text-sm p-1 md:p-1.5 rounded hover:bg-gray-50 transition-colors text-gray-800 placeholder:text-gray-300"
-                  />
+                  <input id="modal-date" type="date" defaultValue={editingTask?.deadline} className="flex-1 bg-transparent border-none focus:ring-0 focus:outline-none text-sm p-1 md:p-1.5 rounded hover:bg-gray-50 transition-colors text-gray-800 placeholder:text-gray-300"/>
                 </div>
               </div>
-              
               <div className="border-t border-gray-100 pt-6">
-                <div className="flex items-center gap-2 text-gray-900 font-semibold mb-3 text-sm">
-                  <AlignLeft size={16} /> Description
-                </div>
+                <div className="flex items-center gap-2 text-gray-900 font-semibold mb-3 text-sm"><AlignLeft size={16} /> Description</div>
                 <RichTextEditor initialValue={editorContent} onChange={setEditorContent} />
               </div>
-
-              <select id="modal-status" className="hidden" defaultValue={editingTask?.status || 'todo'}>
-                 {COLUMNS.map(c => <option key={c.id} value={c.id}>{c.id}</option>)}
-              </select>
+              <select id="modal-status" className="hidden" defaultValue={editingTask?.status || 'todo'}>{COLUMNS.map(c => <option key={c.id} value={c.id}>{c.id}</option>)}</select>
             </div>
-
-            {/* Modal Footer */}
             <div className="p-4 border-t border-gray-100 bg-gray-50/50 flex justify-end gap-3 safe-area-bottom">
               <button onClick={() => setIsModalOpen(false)} className="px-4 py-2.5 text-gray-600 text-sm font-medium hover:bg-gray-200 rounded-lg transition-colors">Cancel</button>
-              <button 
-                type="button" 
-                onClick={() => requirePin(performSave)} 
-                className="px-6 py-2.5 bg-black text-white text-sm font-medium rounded-lg hover:bg-gray-800 shadow-sm transition-all active:scale-95"
-              >
-                Save Task
-              </button>
+              <button type="button" onClick={() => requirePin(performSave)} className="px-6 py-2.5 bg-black text-white text-sm font-medium rounded-lg hover:bg-gray-800 shadow-sm transition-all active:scale-95">Save Task</button>
             </div>
           </div>
         </div>
       )}
-
-      {/* PIN MODAL COMPONENT */}
-      <PinModal 
-        isOpen={isPinModalOpen} 
-        onClose={() => setIsPinModalOpen(false)} 
-        onConfirm={handlePinSuccess} 
-      />
+      <PinModal isOpen={isPinModalOpen} onClose={() => setIsPinModalOpen(false)} onConfirm={handlePinSuccess} />
     </div>
   );
 }
