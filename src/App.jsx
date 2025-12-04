@@ -33,16 +33,33 @@ const COLUMNS = [
   { id: 'done', label: 'Done', color: 'bg-green-500', bg: 'bg-green-50' }
 ];
 
-// --- RICH TEXT EDITOR ---
+// --- FIXED RICH TEXT EDITOR ---
 const RichTextEditor = ({ initialValue, onChange }) => {
   const editorRef = useRef(null);
+
+  // 1. Handle Formatting
   const applyFormat = (command) => {
     document.execCommand(command, false, null);
     editorRef.current.focus();
   };
+
+  // 2. Handle Typing (Update state without re-rendering DOM)
   const handleInput = () => {
-    if (editorRef.current) onChange(editorRef.current.innerHTML);
+    if (editorRef.current) {
+      onChange(editorRef.current.innerHTML);
+    }
   };
+
+  // 3. Sync Data ONLY when it changes externally (like opening a new task)
+  // This prevents the "Typing Backwards" bug by not forcing updates while you type.
+  useEffect(() => {
+    if (editorRef.current && initialValue !== editorRef.current.innerHTML) {
+       // We only update the HTML if it's truly different from what's currently there.
+       // This protects the cursor position.
+       editorRef.current.innerHTML = initialValue || '';
+    }
+  }, [initialValue]);
+
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-50 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all">
       <div className="flex items-center gap-1 p-2 border-b border-gray-200 bg-white">
@@ -52,7 +69,17 @@ const RichTextEditor = ({ initialValue, onChange }) => {
         <button type="button" onClick={() => document.execCommand('formatBlock', false, 'h3')} className="p-1.5 hover:bg-gray-100 rounded text-gray-600"><Heading1 size={16}/></button>
         <button type="button" onClick={() => applyFormat('insertUnorderedList')} className="p-1.5 hover:bg-gray-100 rounded text-gray-600"><List size={16}/></button>
       </div>
-      <div ref={editorRef} contentEditable className="p-4 min-h-[150px] outline-none prose prose-sm max-w-none text-gray-700" onInput={handleInput} dangerouslySetInnerHTML={{ __html: initialValue || '' }} />
+      
+      {/* CRITICAL FIX: 
+         Removed `dangerouslySetInnerHTML` prop. 
+         We now manage content manually via the useEffect above.
+      */}
+      <div 
+        ref={editorRef} 
+        contentEditable 
+        className="p-4 min-h-[150px] outline-none prose prose-sm max-w-none text-gray-700 cursor-text" 
+        onInput={handleInput} 
+      />
     </div>
   );
 };
