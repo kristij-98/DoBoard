@@ -82,7 +82,7 @@ const PinModal = ({ isOpen, onClose, onConfirm }) => {
             value={pin}
             onChange={(e) => { setPin(e.target.value); setError(false); }}
             placeholder="****"
-            className={`w-full text-center text-2xl tracking-widest font-bold py-3 border-2 rounded-lg outline-none transition-all ${error ? 'border-red-500 bg-red-50 text-red-600' : 'border-gray-200 focus:border-black'}`}
+            className={`w-full text-center text-2xl tracking-widest font-bold py-3 border-2 rounded-lg outline-none focus:outline-none transition-all ${error ? 'border-red-500 bg-red-50 text-red-600' : 'border-gray-200 focus:border-black'}`}
             maxLength={4}
           />
           {error && <p className="text-red-500 text-xs text-center mt-2 font-medium">Incorrect PIN</p>}
@@ -150,7 +150,7 @@ const RichTextEditor = ({ initialValue, onChange }) => {
       <div 
         ref={editorRef} 
         contentEditable 
-        className="editor-content p-4 min-h-[150px] outline-none text-gray-800 cursor-text text-sm leading-relaxed" 
+        className="editor-content p-4 min-h-[150px] outline-none focus:outline-none text-gray-800 cursor-text text-sm leading-relaxed" 
         onInput={handleInput} 
       />
     </div>
@@ -259,7 +259,7 @@ export default function App() {
       style={{
         backgroundColor: '#F7F7F5',
         backgroundImage: 'radial-gradient(#D3D3D3 1px, transparent 1px)',
-        backgroundSize: '24px 24px' // The FigJam Dot Pattern
+        backgroundSize: '24px 24px'
       }}
     >
       
@@ -392,7 +392,7 @@ export default function App() {
                 placeholder="Untitled Task" 
                 defaultValue={editingTask?.title}
                 autoFocus
-                className="w-full text-2xl md:text-3xl font-bold text-gray-900 border-none focus:ring-0 p-0 mb-6 placeholder:text-gray-300 bg-transparent"
+                className="w-full text-2xl md:text-3xl font-bold text-gray-900 border-none focus:ring-0 focus:outline-none p-0 mb-6 placeholder:text-gray-300 bg-transparent"
               />
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mb-8">
@@ -403,7 +403,7 @@ export default function App() {
                     type="text" 
                     placeholder="Empty" 
                     defaultValue={editingTask?.client} 
-                    className="flex-1 bg-transparent border-none focus:ring-0 text-sm p-1 md:p-1.5 rounded hover:bg-gray-50 transition-colors text-gray-800 placeholder:text-gray-300"
+                    className="flex-1 bg-transparent border-none focus:ring-0 focus:outline-none text-sm p-1 md:p-1.5 rounded hover:bg-gray-50 transition-colors text-gray-800 placeholder:text-gray-300"
                   />
                 </div>
 
@@ -413,7 +413,7 @@ export default function App() {
                     id="modal-date" 
                     type="date" 
                     defaultValue={editingTask?.deadline} 
-                    className="flex-1 bg-transparent border-none focus:ring-0 text-sm p-1 md:p-1.5 rounded hover:bg-gray-50 transition-colors text-gray-800 placeholder:text-gray-300"
+                    className="flex-1 bg-transparent border-none focus:ring-0 focus:outline-none text-sm p-1 md:p-1.5 rounded hover:bg-gray-50 transition-colors text-gray-800 placeholder:text-gray-300"
                   />
                 </div>
               </div>
