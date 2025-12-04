@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, addDoc, updateDoc, doc, deleteDoc, onSnapshot, query, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, updateDoc, doc, deleteDoc, onSnapshot, query, serverTimestamp } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { 
   Plus, Calendar, User, AlignLeft, Clock, Loader2, Sparkles, 
@@ -200,12 +200,24 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     const q = query(collection(db, COLLECTION_NAME));
+    
+    // --- SORTING LOGIC ---
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const taskList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
       taskList.sort((a, b) => {
-        if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
-        return (a.order || 0) - (b.order || 0);
+        // 1. Pinned items first
+        if (a.isPinned !== b.isPinned) {
+            return a.isPinned ? -1 : 1;
+        }
+        
+        // 2. Deadline Sorting (String comparison works for YYYY-MM-DD)
+        const dateA = a.deadline || '9999-99-99'; // No date -> End of time
+        const dateB = b.deadline || '9999-99-99';
+        
+        return dateA.localeCompare(dateB);
       });
+      
       setTasks(taskList);
       setLoading(false);
     });
@@ -236,12 +248,10 @@ export default function App() {
       if (editingTask?.id) {
         await updateDoc(doc(db, COLLECTION_NAME, editingTask.id), finalData);
       } else {
-        const newOrder = tasks.length > 0 ? Math.max(...tasks.map(t => t.order || 0)) + 1000 : 1000;
         await addDoc(collectionRef, { 
           ...finalData, 
           createdAt: serverTimestamp(), 
           createdBy: user.uid,
-          order: newOrder,
           isPinned: false
         });
       }
@@ -264,39 +274,19 @@ export default function App() {
     }
   };
 
-  const handleDrop = async (e, targetStatus, targetTaskId = null) => {
+  const handleDrop = async (e, targetStatus) => {
     e.preventDefault();
     const draggedTaskId = e.dataTransfer.getData("taskId");
-    if (!draggedTaskId || draggedTaskId === targetTaskId) return;
+    if (!draggedTaskId) return;
 
     const draggedTask = tasks.find(t => t.id === draggedTaskId);
-    const isPinned = draggedTask.isPinned;
-
-    const targetColumnTasks = tasks
-      .filter(t => t.status === targetStatus && t.id !== draggedTaskId && t.isPinned === isPinned)
-      .sort((a, b) => (a.order || 0) - (b.order || 0));
-
-    let newOrderedTasks = [];
-
-    if (targetTaskId) {
-      const targetIndex = targetColumnTasks.findIndex(t => t.id === targetTaskId);
-      newOrderedTasks = [
-        ...targetColumnTasks.slice(0, targetIndex),
-        { ...draggedTask, status: targetStatus },
-        ...targetColumnTasks.slice(targetIndex)
-      ];
-    } else {
-      newOrderedTasks = [...targetColumnTasks, { ...draggedTask, status: targetStatus }];
+    
+    // Only update if status changed (Column changed)
+    if (draggedTask && draggedTask.status !== targetStatus) {
+       try {
+         await updateDoc(doc(db, COLLECTION_NAME, draggedTaskId), { status: targetStatus });
+       } catch (err) { console.error("Move failed", err); }
     }
-
-    try {
-        const batch = writeBatch(db);
-        newOrderedTasks.forEach((task, index) => {
-            const docRef = doc(db, COLLECTION_NAME, task.id);
-            batch.update(docRef, { order: (index + 1) * 1000, status: targetStatus });
-        });
-        await batch.commit();
-    } catch (err) { console.error("Reorder failed", err); }
   };
 
   const onDragStart = (e, taskId) => {
@@ -356,13 +346,11 @@ export default function App() {
                       key={task.id}
                       draggable
                       onDragStart={(e) => onDragStart(e, task.id)}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => { e.stopPropagation(); handleDrop(e, col.id, task.id); }}
                       onClick={() => openEditTask(task)}
                       className={`group bg-white p-4 rounded-xl shadow-[0_2px_4px_rgba(0,0,0,0.02)] border hover:bg-gray-50 active:scale-[0.98] mb-3 cursor-pointer transition-all relative ${task.isPinned ? 'border-blue-200 ring-1 ring-blue-100' : 'border-[#E9E9E7]'}`}
                     >
                       <div className="flex items-start gap-2 mb-2">
-                        {/* FIX: Move Pin icon to the LEFT side of title to avoid overlap */}
+                        {/* Pin Icon - LEFT side */}
                         {task.isPinned && <Pin size={14} className="text-blue-500 fill-blue-500 rotate-45 shrink-0 mt-1" />}
                         <h3 className="font-medium text-gray-800 leading-snug text-sm md:text-base flex-1 pr-6">{task.title}</h3>
                       </div>
