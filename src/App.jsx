@@ -4,7 +4,7 @@ import { getFirestore, collection, addDoc, updateDoc, doc, deleteDoc, onSnapshot
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { 
   Plus, Calendar, User, AlignLeft, Clock, Loader2, Sparkles, 
-  MoreHorizontal, Bold, Italic, Heading1, Heading2, List, X, Trash2, ChevronRight, LayoutGrid, Lock
+  MoreHorizontal, Bold, Italic, Heading1, Heading2, Heading3, List, ListOrdered, X, Trash2, ChevronRight, LayoutGrid, Lock
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
@@ -25,7 +25,7 @@ const db = getFirestore(app);
 const COLLECTION_NAME = 'doboard_tasks';
 const CORRECT_PIN = "1912";
 
-// --- STYLES ---
+// --- STYLES (Notion Colors) ---
 const COLUMNS = [
   { id: 'todo', label: 'To Do', badge: 'bg-gray-200 text-gray-700' },
   { id: 'doing', label: 'In Progress', badge: 'bg-blue-100 text-blue-700' },
@@ -101,13 +101,15 @@ const PinModal = ({ isOpen, onClose, onConfirm }) => {
   );
 };
 
-// 2. RICH TEXT EDITOR
+// 2. RICH TEXT EDITOR (Fixed Lists & Headings)
 const RichTextEditor = ({ initialValue, onChange }) => {
   const editorRef = useRef(null);
 
-  const applyFormat = (command) => {
-    document.execCommand(command, false, null);
-    editorRef.current.focus();
+  // We use onMouseDown + preventDefault to keep focus in the editor while clicking buttons
+  const applyFormat = (e, command, value = null) => {
+    e.preventDefault(); 
+    document.execCommand(command, false, value);
+    if (editorRef.current) editorRef.current.focus();
   };
 
   const handleInput = () => {
@@ -115,24 +117,51 @@ const RichTextEditor = ({ initialValue, onChange }) => {
   };
 
   useEffect(() => {
+    // Only update innerHTML if it's significantly different to prevent cursor jumps
     if (editorRef.current && initialValue !== editorRef.current.innerHTML) {
-       editorRef.current.innerHTML = initialValue || '';
+        // Simple check to avoid overwriting ongoing typing with same data
+        if (initialValue === '' && editorRef.current.innerHTML === '<br>') return;
+        editorRef.current.innerHTML = initialValue || '';
     }
   }, [initialValue]);
 
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden bg-white focus-within:ring-1 focus-within:ring-gray-400 transition-all">
+    <div className="border border-gray-200 rounded-lg overflow-hidden bg-white focus-within:ring-1 focus-within:ring-gray-400 transition-all shadow-sm">
+      {/* Internal CSS to force list styles that Tailwind usually resets */}
+      <style>{`
+        .editor-content ul { list-style-type: disc; margin-left: 1.25rem; padding-left: 1rem; margin-bottom: 0.5rem; }
+        .editor-content ol { list-style-type: decimal; margin-left: 1.25rem; padding-left: 1rem; margin-bottom: 0.5rem; }
+        .editor-content h1 { font-size: 1.5em; font-weight: 700; margin-top: 0.5em; margin-bottom: 0.25em; line-height: 1.2; }
+        .editor-content h2 { font-size: 1.25em; font-weight: 600; margin-top: 0.5em; margin-bottom: 0.25em; line-height: 1.2; }
+        .editor-content h3 { font-size: 1.1em; font-weight: 600; margin-top: 0.5em; margin-bottom: 0.25em; }
+        .editor-content p { margin-bottom: 0.5rem; }
+        .editor-content b, .editor-content strong { font-weight: 700; }
+        .editor-content i, .editor-content em { font-style: italic; }
+      `}</style>
+
       <div className="flex items-center gap-1 p-2 border-b border-gray-100 bg-gray-50/50 overflow-x-auto">
-        <button type="button" onClick={() => applyFormat('bold')} className="p-1.5 hover:bg-gray-200 rounded text-gray-600 transition-colors"><Bold size={14}/></button>
-        <button type="button" onClick={() => applyFormat('italic')} className="p-1.5 hover:bg-gray-200 rounded text-gray-600 transition-colors"><Italic size={14}/></button>
+        {/* Basic Text Formatting */}
+        <button onMouseDown={(e) => applyFormat(e, 'bold')} className="p-1.5 hover:bg-gray-200 rounded text-gray-600 transition-colors" title="Bold"><Bold size={14}/></button>
+        <button onMouseDown={(e) => applyFormat(e, 'italic')} className="p-1.5 hover:bg-gray-200 rounded text-gray-600 transition-colors" title="Italic"><Italic size={14}/></button>
+        
         <div className="w-px h-4 bg-gray-300 mx-1"></div>
-        <button type="button" onClick={() => document.execCommand('formatBlock', false, 'h3')} className="p-1.5 hover:bg-gray-200 rounded text-gray-600 transition-colors"><Heading1 size={14}/></button>
-        <button type="button" onClick={() => applyFormat('insertUnorderedList')} className="p-1.5 hover:bg-gray-200 rounded text-gray-600 transition-colors"><List size={14}/></button>
+        
+        {/* Headings */}
+        <button onMouseDown={(e) => applyFormat(e, 'formatBlock', 'H1')} className="p-1.5 hover:bg-gray-200 rounded text-gray-600 transition-colors flex items-center gap-1 font-bold text-xs" title="Heading 1"><Heading1 size={14}/></button>
+        <button onMouseDown={(e) => applyFormat(e, 'formatBlock', 'H2')} className="p-1.5 hover:bg-gray-200 rounded text-gray-600 transition-colors flex items-center gap-1 font-bold text-xs" title="Heading 2"><Heading2 size={14}/></button>
+        <button onMouseDown={(e) => applyFormat(e, 'formatBlock', 'H3')} className="p-1.5 hover:bg-gray-200 rounded text-gray-600 transition-colors flex items-center gap-1 font-bold text-xs" title="Heading 3"><Heading3 size={14}/></button>
+        
+        <div className="w-px h-4 bg-gray-300 mx-1"></div>
+        
+        {/* Lists */}
+        <button onMouseDown={(e) => applyFormat(e, 'insertUnorderedList')} className="p-1.5 hover:bg-gray-200 rounded text-gray-600 transition-colors" title="Bullet List"><List size={14}/></button>
+        <button onMouseDown={(e) => applyFormat(e, 'insertOrderedList')} className="p-1.5 hover:bg-gray-200 rounded text-gray-600 transition-colors" title="Numbered List"><ListOrdered size={14}/></button>
       </div>
+      
       <div 
         ref={editorRef} 
         contentEditable 
-        className="p-4 min-h-[120px] outline-none prose prose-sm max-w-none text-gray-800 cursor-text text-base md:text-sm" // Larger text on mobile for touch
+        className="editor-content p-4 min-h-[150px] outline-none text-gray-800 cursor-text text-sm leading-relaxed" 
         onInput={handleInput} 
       />
     </div>
