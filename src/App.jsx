@@ -1,10 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, updateDoc, doc, deleteDoc, onSnapshot, query, serverTimestamp } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { Plus, Calendar, User, AlignLeft, Clock, Loader2, MoreHorizontal, X, CheckSquare, GripVertical } from 'lucide-react';
+import { 
+  Plus, Calendar, User, AlignLeft, Clock, Loader2, Sparkles, 
+  LayoutGrid, CheckSquare, Settings, Bell, Search, MoreHorizontal,
+  Bold, Italic, Heading1, Heading2, List, X, Trash2, ChevronRight
+} from 'lucide-react';
 
-// --- YOUR CONFIGURATION (Verified) ---
+// --- CONFIGURATION ---
 const firebaseConfig = {
   apiKey: "AIzaSyC2P7U9sDxQTEjdku4A6dKA3OaOqXxwo_4",
   authDomain: "doboard-449ba.firebaseapp.com",
@@ -21,55 +25,116 @@ const db = getFirestore(app);
 
 const COLLECTION_NAME = 'doboard_tasks';
 
-// Notion-style pastel colors
+// --- STYLE CONFIGURATION ---
 const COLUMNS = [
-  { id: 'todo', label: 'To Do', bg: 'bg-[#F7F7F5]', text: 'text-[#37352F]', badge: 'bg-[#E3E2E0] text-[#32302C]' },
-  { id: 'doing', label: 'In Progress', bg: 'bg-[#F7F7F5]', text: 'text-[#37352F]', badge: 'bg-[#D3E5EF] text-[#183347]' },
-  { id: 'feedback', label: 'Feedback', bg: 'bg-[#F7F7F5]', text: 'text-[#37352F]', badge: 'bg-[#FDECC8] text-[#402C1B]' },
-  { id: 'done', label: 'Done', bg: 'bg-[#F7F7F5]', text: 'text-[#37352F]', badge: 'bg-[#DBEDDB] text-[#1C3829]' }
+  { id: 'todo', label: 'To Do', color: 'bg-blue-500', bg: 'bg-blue-50' },
+  { id: 'doing', label: 'On Progress', color: 'bg-orange-500', bg: 'bg-orange-50' },
+  { id: 'feedback', label: 'Feedback', color: 'bg-purple-500', bg: 'bg-purple-50' },
+  { id: 'done', label: 'Done', color: 'bg-green-500', bg: 'bg-green-50' }
 ];
 
-// --- COMPONENTS ---
+// --- RICH TEXT EDITOR COMPONENT ---
+const RichTextEditor = ({ initialValue, onChange }) => {
+  const editorRef = useRef(null);
 
-const NotionButton = ({ children, onClick, variant = 'primary', className = '' }) => {
-  const baseStyle = "px-3 py-1.5 rounded text-sm font-medium transition-colors flex items-center gap-2 select-none";
-  const variants = {
-    primary: "bg-[#2383E2] text-white hover:bg-[#1B6BB8] shadow-sm",
-    ghost: "bg-transparent text-[#6B6B6B] hover:bg-[#EFEFEE] hover:text-[#37352F]",
-    danger: "text-[#EB5757] hover:bg-[#FFEEEE]",
-    secondary: "border border-[#E0E0E0] text-[#37352F] hover:bg-[#F7F7F5]"
+  const applyFormat = (command) => {
+    document.execCommand(command, false, null);
+    editorRef.current.focus();
   };
-  return <button onClick={onClick} className={`${baseStyle} ${variants[variant]} ${className}`}>{children}</button>;
+
+  const handleInput = () => {
+    if (editorRef.current) {
+      onChange(editorRef.current.innerHTML);
+    }
+  };
+
+  return (
+    <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-50 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all">
+      {/* Toolbar */}
+      <div className="flex items-center gap-1 p-2 border-b border-gray-200 bg-white">
+        <button onClick={() => applyFormat('bold')} className="p-1.5 hover:bg-gray-100 rounded text-gray-600" title="Bold"><Bold size={16}/></button>
+        <button onClick={() => applyFormat('italic')} className="p-1.5 hover:bg-gray-100 rounded text-gray-600" title="Italic"><Italic size={16}/></button>
+        <div className="w-px h-4 bg-gray-300 mx-1"></div>
+        <button onClick={() => document.execCommand('formatBlock', false, 'h3')} className="p-1.5 hover:bg-gray-100 rounded text-gray-600" title="Heading"><Heading1 size={16}/></button>
+        <button onClick={() => document.execCommand('formatBlock', false, 'h4')} className="p-1.5 hover:bg-gray-100 rounded text-gray-600" title="Subheading"><Heading2 size={16}/></button>
+        <div className="w-px h-4 bg-gray-300 mx-1"></div>
+        <button onClick={() => applyFormat('insertUnorderedList')} className="p-1.5 hover:bg-gray-100 rounded text-gray-600" title="List"><List size={16}/></button>
+      </div>
+      {/* Editable Area */}
+      <div 
+        ref={editorRef}
+        contentEditable
+        className="p-4 min-h-[200px] outline-none prose prose-sm max-w-none text-gray-700"
+        onInput={handleInput}
+        dangerouslySetInnerHTML={{ __html: initialValue || '' }}
+      />
+    </div>
+  );
 };
 
-const EmptyState = ({ onCreate }) => (
-  <div className="flex flex-col items-center justify-center h-full w-full animate-in fade-in duration-700">
-    <div className="w-48 h-48 mb-6 opacity-80">
-      {/* Notion Style Line Illustration */}
-      <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
-        <path d="M40 60C40 54.4772 44.4772 50 50 50H150C155.523 50 160 54.4772 160 60V160C160 165.523 155.523 170 150 170H50C44.4772 170 40 165.523 40 160V60Z" fill="white" stroke="#E0E0E0" strokeWidth="2"/>
-        <rect x="60" y="80" width="80" height="8" rx="2" fill="#F0F0F0"/>
-        <rect x="60" y="100" width="50" height="8" rx="2" fill="#F0F0F0"/>
-        <rect x="60" y="120" width="70" height="8" rx="2" fill="#F0F0F0"/>
-        <circle cx="140" cy="70" r="15" fill="#FFF8E0" stroke="#FFE082" strokeWidth="2"/>
-        {/* Floating elements */}
-        <rect x="30" y="110" width="40" height="30" rx="4" transform="rotate(-12 30 110)" fill="white" stroke="#E0E0E0" strokeWidth="2"/>
-        <path d="M130 150L170 110" stroke="#CCCCCC" strokeWidth="2" strokeDasharray="4 4"/>
-      </svg>
+// --- MAIN COMPONENTS ---
+
+const Sidebar = () => (
+  <aside className="w-64 bg-[#1F2128] text-gray-400 flex flex-col h-screen fixed left-0 top-0 border-r border-gray-800 hidden md:flex">
+    <div className="p-6 flex items-center gap-3 text-white mb-6">
+      <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-bold text-lg shadow-lg shadow-blue-900/50">D</div>
+      <span className="font-semibold text-xl tracking-tight">DoBoard</span>
     </div>
-    <h2 className="text-lg font-medium text-[#37352F] mb-1">No tasks yet</h2>
-    <p className="text-[#9B9A97] text-sm mb-6">Click below to add your first project.</p>
-    <NotionButton onClick={onCreate} variant="primary">Create new task</NotionButton>
+
+    <nav className="flex-1 px-4 space-y-2">
+      <div className="px-4 py-3 bg-[#2C2D33] text-white rounded-xl flex items-center gap-3 cursor-pointer shadow-sm">
+        <LayoutGrid size={20} className="text-blue-500" />
+        <span className="font-medium">Board</span>
+      </div>
+      <div className="px-4 py-3 hover:bg-[#2C2D33] hover:text-white rounded-xl flex items-center gap-3 cursor-pointer transition-colors">
+        <CheckSquare size={20} />
+        <span>My Tasks</span>
+      </div>
+      <div className="px-4 py-3 hover:bg-[#2C2D33] hover:text-white rounded-xl flex items-center gap-3 cursor-pointer transition-colors">
+        <Calendar size={20} />
+        <span>Calendar</span>
+      </div>
+      <div className="px-4 py-3 hover:bg-[#2C2D33] hover:text-white rounded-xl flex items-center gap-3 cursor-pointer transition-colors">
+        <Settings size={20} />
+        <span>Settings</span>
+      </div>
+    </nav>
+
+    {/* User Profile Snippet */}
+    <div className="p-6 border-t border-gray-800">
+      <div className="bg-[#2C2D33] rounded-xl p-4 flex items-center gap-3">
+        <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold">U</div>
+        <div>
+          <div className="text-white text-sm font-medium">User</div>
+          <div className="text-xs">Admin</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+);
+
+const EmptyState = ({ onCreate }) => (
+  <div className="flex flex-col items-center justify-center h-full w-full animate-in fade-in duration-700 p-12">
+    <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 mb-6 text-center">
+      <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-500">
+        <LayoutGrid size={32} />
+      </div>
+      <h2 className="text-xl font-bold text-gray-900 mb-2">Start your first project</h2>
+      <p className="text-gray-500 max-w-xs mx-auto mb-6">Your board is clean. Create a task to visualize your workflow.</p>
+      <button onClick={onCreate} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-medium transition-all shadow-lg shadow-blue-200">
+        Create New Task
+      </button>
+    </div>
   </div>
 );
 
-// --- MAIN APP ---
 export default function App() {
   const [user, setUser] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
+  const [editorContent, setEditorContent] = useState('');
 
   useEffect(() => {
     signInAnonymously(auth).catch((e) => console.error(e));
@@ -91,10 +156,16 @@ export default function App() {
   const handleSaveTask = async (taskData) => {
     if (!user) return;
     const collectionRef = collection(db, COLLECTION_NAME);
+    // Use the editor content if it's editing
+    const finalData = {
+      ...taskData,
+      brief: editorContent // Override brief with HTML from editor
+    };
+
     if (taskData.id) {
-      await updateDoc(doc(db, COLLECTION_NAME, taskData.id), { ...taskData });
+      await updateDoc(doc(db, COLLECTION_NAME, taskData.id), finalData);
     } else {
-      await addDoc(collectionRef, { ...taskData, status: 'todo', createdAt: serverTimestamp(), createdBy: user.uid });
+      await addDoc(collectionRef, { ...finalData, status: 'todo', createdAt: serverTimestamp(), createdBy: user.uid });
     }
     setIsModalOpen(false);
   };
@@ -116,150 +187,224 @@ export default function App() {
     if (taskId) handleStatusChange(taskId, status);
   };
 
-  const openNewTask = () => { setEditingTask(null); setIsModalOpen(true); };
+  const openNewTask = () => { 
+    setEditingTask(null); 
+    setEditorContent(''); 
+    setIsModalOpen(true); 
+  };
+  
+  const openEditTask = (task) => {
+    setEditingTask(task);
+    setEditorContent(task.brief || '');
+    setIsModalOpen(true);
+  }
 
   return (
-    <div className="min-h-screen bg-white text-[#37352F] font-sans flex flex-col">
-      {/* NAVBAR */}
-      <nav className="sticky top-0 z-30 bg-white border-b border-[#E0E0E0] px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 bg-[#37352F] rounded-sm flex items-center justify-center text-white font-bold text-xs">D</div>
-          <h1 className="font-medium text-sm tracking-wide">DoBoard</h1>
-          <span className="text-[#9B9A97] text-xs px-2 border-l border-[#E0E0E0] ml-2">Team Workspace</span>
-        </div>
-        <NotionButton onClick={openNewTask} variant="primary">New</NotionButton>
-      </nav>
+    <div className="min-h-screen bg-[#F2F4F7] font-sans flex">
+      <Sidebar />
 
-      {/* BOARD AREA */}
-      <main className="flex-1 p-6 overflow-hidden flex flex-col">
-        {loading ? (
-          <div className="flex-1 flex items-center justify-center"><Loader2 className="animate-spin text-[#9B9A97]" /></div>
-        ) : tasks.length === 0 ? (
-          <EmptyState onCreate={openNewTask} />
-        ) : (
-          <div className="flex gap-4 h-full overflow-x-auto pb-4 items-start">
-            {COLUMNS.map(col => (
-              <div key={col.id} className="flex-none w-[260px] flex flex-col max-h-full" onDragOver={onDragOver} onDrop={(e) => onDrop(e, col.id)}>
-                {/* Column Header */}
-                <div className="flex items-center justify-between mb-2 px-1">
-                  <div className="flex items-center gap-2">
-                    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${col.badge}`}>{col.label}</span>
-                    <span className="text-[#9B9A97] text-xs">{tasks.filter(t => t.status === col.id).length}</span>
-                  </div>
-                  <div className="flex gap-1 opacity-0 hover:opacity-100 transition-opacity">
-                    <button onClick={openNewTask} className="text-[#9B9A97] hover:bg-[#EFEFEE] p-1 rounded"><Plus size={14}/></button>
-                  </div>
-                </div>
-                
-                {/* Column Content */}
-                <div className="flex-1 overflow-y-auto pb-10">
-                  {tasks.filter(t => t.status === col.id).map(task => (
-                    <div 
-                      key={task.id} 
-                      draggable 
-                      onDragStart={(e) => onDragStart(e, task.id)}
-                      onClick={() => { setEditingTask(task); setIsModalOpen(true); }}
-                      className="group bg-white p-3 rounded shadow-[0_1px_3px_rgba(0,0,0,0.08)] border border-[#E0E0E0] hover:bg-[#FBFAF9] mb-2 cursor-pointer transition-all relative"
-                    >
-                      <div className="text-[#37352F] font-medium text-sm mb-2 pr-4">{task.title || "Untitled"}</div>
-                      
-                      <div className="space-y-1.5">
-                        {task.client && (
-                          <div className="flex items-center text-xs text-[#5f5e5b]">
-                            <User size={12} className="mr-1.5 text-[#9B9A97]"/> 
-                            <span className="bg-[#F7F7F5] px-1 rounded truncate max-w-[150px]">{task.client}</span>
-                          </div>
-                        )}
-                        {task.deadline && (
-                          <div className="flex items-center text-xs text-[#5f5e5b]">
-                            <Calendar size={12} className="mr-1.5 text-[#9B9A97]"/>
-                            <span>{task.deadline}</span>
-                          </div>
-                        )}
-                      </div>
-                      <div className="opacity-0 group-hover:opacity-100 absolute top-2 right-2 text-[#D3D3D3]">
-                        <GripVertical size={12}/>
-                      </div>
-                    </div>
-                  ))}
-                  <div className="h-8 rounded hover:bg-[#F7F7F5] flex items-center justify-center text-[#9B9A97] text-xs cursor-pointer transition-colors" onClick={openNewTask}>+ New</div>
-                </div>
-              </div>
-            ))}
+      {/* Main Content */}
+      <div className="flex-1 md:ml-64 flex flex-col h-screen">
+        {/* Header */}
+        <header className="bg-white border-b border-gray-200 px-8 py-5 flex items-center justify-between sticky top-0 z-20">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Project Board</h1>
+            <p className="text-sm text-gray-500 mt-1">Manage your team's tasks and workflows</p>
           </div>
-        )}
-      </main>
+          <div className="flex items-center gap-4">
+            <div className="bg-gray-100 rounded-lg p-2 text-gray-400 hover:text-gray-600 cursor-pointer">
+              <Search size={20} />
+            </div>
+            <div className="bg-gray-100 rounded-lg p-2 text-gray-400 hover:text-gray-600 cursor-pointer relative">
+              <Bell size={20} />
+              <div className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full"></div>
+            </div>
+            <button 
+              onClick={openNewTask} 
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 shadow-lg shadow-blue-600/20 transition-all"
+            >
+              <Plus size={18} /> New Task
+            </button>
+          </div>
+        </header>
 
-      {/* NOTION STYLE MODAL */}
+        {/* Board Canvas */}
+        <main className="flex-1 p-8 overflow-x-auto overflow-y-hidden">
+          {loading ? (
+             <div className="h-full flex items-center justify-center"><Loader2 className="animate-spin text-blue-500" size={32}/></div>
+          ) : tasks.length === 0 ? (
+             <EmptyState onCreate={openNewTask} />
+          ) : (
+            <div className="flex gap-8 h-full min-w-[1000px]">
+              {COLUMNS.map(col => (
+                <div 
+                  key={col.id} 
+                  className="flex-1 flex flex-col min-w-[280px] h-full"
+                  onDragOver={onDragOver} 
+                  onDrop={(e) => onDrop(e, col.id)}
+                >
+                  {/* Column Header */}
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-3 h-3 rounded-full ${col.color}`}></div>
+                      <span className="font-bold text-gray-700">{col.label}</span>
+                      <span className="bg-gray-200 text-gray-600 text-xs px-2 py-0.5 rounded-full font-medium">
+                        {tasks.filter(t => t.status === col.id).length}
+                      </span>
+                    </div>
+                    <MoreHorizontal size={18} className="text-gray-400 cursor-pointer" />
+                  </div>
+
+                  {/* Column Drop Zone */}
+                  <div className="flex-1 overflow-y-auto pr-2 pb-20">
+                    {tasks.filter(t => t.status === col.id).map(task => (
+                      <div 
+                        key={task.id}
+                        draggable
+                        onDragStart={(e) => onDragStart(e, task.id)}
+                        onClick={() => openEditTask(task)}
+                        className="bg-white p-5 rounded-2xl shadow-sm border border-transparent hover:border-blue-200 hover:shadow-md mb-4 cursor-pointer transition-all group"
+                      >
+                        <div className="flex justify-between items-start mb-3">
+                          {/* Priority Tag Simulation */}
+                          <div className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider ${
+                             col.id === 'done' ? 'bg-green-100 text-green-700' : 
+                             col.id === 'doing' ? 'bg-orange-100 text-orange-700' : 
+                             'bg-gray-100 text-gray-600'
+                          }`}>
+                            {col.id === 'todo' ? 'Backlog' : col.id}
+                          </div>
+                          <div className="opacity-0 group-hover:opacity-100 text-gray-400 transition-opacity">
+                            <MoreHorizontal size={16} />
+                          </div>
+                        </div>
+
+                        <h3 className="font-bold text-gray-800 mb-2 leading-snug">{task.title}</h3>
+                        
+                        {task.brief && (
+                          <p className="text-xs text-gray-400 line-clamp-2 mb-4">
+                            {task.brief.replace(/<[^>]*>?/gm, '') /* Strip HTML for preview */}
+                          </p>
+                        )}
+
+                        <div className="flex items-center justify-between border-t border-gray-50 pt-3 mt-2">
+                           {/* Avatars */}
+                           <div className="flex -space-x-2">
+                              <div className="w-6 h-6 rounded-full bg-blue-100 border-2 border-white flex items-center justify-center text-[10px] font-bold text-blue-600">JD</div>
+                              <div className="w-6 h-6 rounded-full bg-yellow-100 border-2 border-white flex items-center justify-center text-[10px] font-bold text-yellow-600">+</div>
+                           </div>
+                           
+                           <div className="flex items-center gap-3">
+                             {task.deadline && (
+                               <div className={`flex items-center text-xs font-medium ${
+                                 new Date(task.deadline) < new Date() && col.id !== 'done' ? 'text-red-500' : 'text-gray-400'
+                               }`}>
+                                 <Clock size={14} className="mr-1" />
+                                 {new Date(task.deadline).toLocaleDateString(undefined, {month:'short', day:'numeric'})}
+                               </div>
+                             )}
+                           </div>
+                        </div>
+                      </div>
+                    ))}
+                    <button 
+                      onClick={openNewTask} 
+                      className="w-full py-3 border-2 border-dashed border-gray-200 rounded-xl text-gray-400 text-sm font-medium hover:border-blue-300 hover:text-blue-500 transition-all flex items-center justify-center gap-2"
+                    >
+                      <Plus size={16}/> Add Task
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </main>
+      </div>
+
+      {/* Create/Edit Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-[#191919]/40 backdrop-blur-[2px]" onClick={() => setIsModalOpen(false)}></div>
-          <div className="relative bg-white w-full max-w-3xl max-h-[90vh] rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-[0.98] duration-200">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={() => setIsModalOpen(false)}></div>
+          
+          <div className="relative bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200">
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-[#F0F0F0] text-sm text-[#9B9A97]">
-              <div className="flex items-center gap-2">
-                 <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#2383E2]"></div> {editingTask?.status ? COLUMNS.find(c => c.id === editingTask.status)?.label : 'To Do'}</span>
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+              <div className="flex items-center gap-2 text-sm text-gray-500">
+                <span className="font-medium text-gray-900">{editingTask ? 'Edit Task' : 'Create New Task'}</span>
+                <ChevronRight size={14} />
+                <span>{COLUMNS.find(c => c.id === (editingTask?.status || 'todo'))?.label}</span>
               </div>
-              <div className="flex items-center gap-1">
-                {editingTask && <button onClick={() => handleDeleteTask(editingTask.id)} className="p-1.5 hover:bg-[#FFEEEE] text-[#9B9A97] hover:text-red-500 rounded"><span className="sr-only">Delete</span>Delete</button>}
-                <button onClick={() => setIsModalOpen(false)} className="p-1.5 hover:bg-[#EFEFEE] rounded"><X size={18}/></button>
+              <div className="flex items-center gap-2">
+                {editingTask && (
+                   <button onClick={() => handleDeleteTask(editingTask.id)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+                     <Trash2 size={18} />
+                   </button>
+                )}
+                <button onClick={() => setIsModalOpen(false)} className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                  <X size={20} />
+                </button>
               </div>
             </div>
 
             {/* Modal Body */}
-            <div className="flex-1 overflow-y-auto p-12">
+            <div className="flex-1 overflow-y-auto p-6 md:p-8">
               <input 
                 id="modal-title"
                 type="text" 
-                placeholder="Untitled" 
-                defaultValue={editingTask?.title} 
-                className="w-full text-4xl font-bold text-[#37352F] placeholder-[#D3D3D3] border-none focus:ring-0 p-0 mb-8"
+                placeholder="Task Title" 
+                defaultValue={editingTask?.title}
+                className="w-full text-2xl font-bold text-gray-900 border-none focus:ring-0 p-0 mb-6 placeholder:text-gray-300 bg-transparent"
               />
 
-              {/* Properties Grid */}
-              <div className="space-y-4 mb-8 text-sm">
-                <div className="grid grid-cols-[140px_1fr] items-center">
-                  <div className="text-[#9B9A97] flex items-center gap-2"><User size={14}/> Client</div>
-                  <input id="modal-client" type="text" defaultValue={editingTask?.client} placeholder="Empty" className="w-full bg-transparent border-none focus:ring-0 p-1 hover:bg-[#F7F7F5] rounded text-[#37352F]"/>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Client / Project</label>
+                  <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-lg border border-gray-100 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all">
+                    <User size={16} className="text-gray-400" />
+                    <input id="modal-client" type="text" placeholder="e.g. Acme Corp" defaultValue={editingTask?.client} className="bg-transparent border-none focus:ring-0 text-sm w-full p-0 text-gray-700"/>
+                  </div>
                 </div>
-                <div className="grid grid-cols-[140px_1fr] items-center">
-                  <div className="text-[#9B9A97] flex items-center gap-2"><Calendar size={14}/> Due Date</div>
-                  <input id="modal-date" type="date" defaultValue={editingTask?.deadline} className="bg-transparent border-none focus:ring-0 p-1 hover:bg-[#F7F7F5] rounded text-[#37352F]"/>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Due Date</label>
+                  <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-lg border border-gray-100 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all">
+                    <Calendar size={16} className="text-gray-400" />
+                    <input id="modal-date" type="date" defaultValue={editingTask?.deadline} className="bg-transparent border-none focus:ring-0 text-sm w-full p-0 text-gray-700"/>
+                  </div>
                 </div>
-                <div className="grid grid-cols-[140px_1fr] items-center">
-                  <div className="text-[#9B9A97] flex items-center gap-2"><CheckSquare size={14}/> Status</div>
-                  <select id="modal-status" defaultValue={editingTask?.status || 'todo'} className="bg-transparent border-none focus:ring-0 p-1 hover:bg-[#F7F7F5] rounded text-[#37352F] cursor-pointer">
-                    {COLUMNS.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
-                  </select>
-                </div>
+              </div>
+              
+              <div className="mb-2">
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">Description & Notes</label>
+                {/* RICH TEXT EDITOR */}
+                <RichTextEditor 
+                  initialValue={editorContent} 
+                  onChange={setEditorContent} 
+                />
               </div>
 
-              <div className="border-t border-[#F0F0F0] pt-6">
-                <div className="text-[#37352F] font-semibold mb-2 flex items-center gap-2"><AlignLeft size={16}/> Brief / Notes</div>
-                <textarea 
-                  id="modal-brief"
-                  defaultValue={editingTask?.brief} 
-                  placeholder="Type your notes here... (Markdown supported)" 
-                  className="w-full min-h-[300px] border-none focus:ring-0 text-[#37352F] leading-relaxed resize-none p-0"
-                ></textarea>
-              </div>
+              {/* Hidden Status Selector for Logic */}
+              <select id="modal-status" className="hidden" defaultValue={editingTask?.status || 'todo'}>
+                 {COLUMNS.map(c => <option key={c.id} value={c.id}>{c.id}</option>)}
+              </select>
             </div>
 
-            {/* Modal Footer (Action) */}
-            <div className="p-4 border-t border-[#F0F0F0] bg-[#FBFAF9] flex justify-end">
-              <NotionButton 
-                variant="primary" 
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
+              <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-gray-600 font-medium hover:bg-gray-200 rounded-lg transition-colors">Cancel</button>
+              <button 
                 onClick={() => handleSaveTask({
                   id: editingTask?.id,
                   title: document.getElementById('modal-title').value,
                   client: document.getElementById('modal-client').value,
                   deadline: document.getElementById('modal-date').value,
                   status: document.getElementById('modal-status').value,
-                  brief: document.getElementById('modal-brief').value,
+                  // Brief is handled by state `editorContent`
                 })}
+                className="px-6 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 shadow-md shadow-blue-600/20 transition-all"
               >
-                Done
-              </NotionButton>
+                Save Task
+              </button>
             </div>
           </div>
         </div>
