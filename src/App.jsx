@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, addDoc, updateDoc, doc, deleteDoc, onSnapshot, query, serverTimestamp } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, updateDoc, doc, deleteDoc, onSnapshot, query, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { 
   Plus, Calendar, User, AlignLeft, Clock, Loader2, Sparkles, 
@@ -207,15 +207,18 @@ export default function App() {
       
       taskList.sort((a, b) => {
         // 1. Pinned items first
-        if (a.isPinned !== b.isPinned) {
-            return a.isPinned ? -1 : 1;
-        }
+        if (a.isPinned && !b.isPinned) return -1;
+        if (!a.isPinned && b.isPinned) return 1;
         
-        // 2. Deadline Sorting (String comparison works for YYYY-MM-DD)
-        const dateA = a.deadline || '9999-99-99'; // No date -> End of time
-        const dateB = b.deadline || '9999-99-99';
+        // 2. Deadline Sorting (Ascending - Earliest date first)
+        // If deadline is missing, treat it as very far in future (bottom of list)
+        const dateA = a.deadline ? a.deadline : '9999-12-31';
+        const dateB = b.deadline ? b.deadline : '9999-12-31';
         
-        return dateA.localeCompare(dateB);
+        if (dateA < dateB) return -1;
+        if (dateA > dateB) return 1;
+        
+        return 0;
       });
       
       setTasks(taskList);
@@ -282,6 +285,7 @@ export default function App() {
     const draggedTask = tasks.find(t => t.id === draggedTaskId);
     
     // Only update if status changed (Column changed)
+    // We removed manual reordering logic; sorting is now purely by date/pin
     if (draggedTask && draggedTask.status !== targetStatus) {
        try {
          await updateDoc(doc(db, COLLECTION_NAME, draggedTaskId), { status: targetStatus });
@@ -346,6 +350,8 @@ export default function App() {
                       key={task.id}
                       draggable
                       onDragStart={(e) => onDragStart(e, task.id)}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => { e.stopPropagation(); handleDrop(e, col.id, task.id); }}
                       onClick={() => openEditTask(task)}
                       className={`group bg-white p-4 rounded-xl shadow-[0_2px_4px_rgba(0,0,0,0.02)] border hover:bg-gray-50 active:scale-[0.98] mb-3 cursor-pointer transition-all relative ${task.isPinned ? 'border-blue-200 ring-1 ring-blue-100' : 'border-[#E9E9E7]'}`}
                     >
